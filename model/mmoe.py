@@ -71,14 +71,35 @@ class SparseMMOE(nn.Module):
     def __init__(self, feature_num, pretrained_embedding, embedding_map, num_experts, experts_out,
                  experts_hidden, towers_hidden, tasks):
         super(SparseMMOE, self).__init__()
-        input_size = len(pretrained_embedding[0]) * feature_num
+        self.embedding_size = len(pretrained_embedding[0])
+        input_size = self.embedding_size * feature_num
         self.MMOE = MMOE(input_size, num_experts, experts_out, experts_hidden, towers_hidden, tasks)
         self.embedding = nn.Embedding.from_pretrained(torch.tensor(pretrained_embedding))
         self.embedding.requires_grad_(requires_grad=True)
         self.embedding_map = embedding_map
 
     def forward(self, x):
-        embedding_input = torch.tensor([[self.embedding_map[feature.item()] for feature in features] for features in x])
-        embedding_output = self.embedding(embedding_input).view([x.shape[0], -1])
+        if self.train():
+            embedding_input = torch.tensor([[self.embedding_map[feature.item()] for feature in features] for features in x])
+            embedding_output = self.embedding(embedding_input)
+        else:
+            embedding_input = []
+            sparse_feature_indexes = []
+            feature_index = 0
+            for features in x:
+                for feature in features:
+                    if feature in self.embedding_map:
+                        embedding_input.append(feature.item())
+                    else:
+                        embedding_input.append(0)
+                        sparse_feature_indexes.append(feature_index)
+                    feature_index += 1
+            embedding_input = torch.tensor(embedding_input)
+            embedding_output = self.embedding(embedding_input)
+            for sparse_feature_index in sparse_feature_indexes:
+                embedding_input[sparse_feature_index * self.embedding_size:
+                                (sparse_feature_index + 1) * self.embedding_size - 1] = 0
+        embedding_output = embedding_output.view([x.shape[0], -1])
+
         output = self.MMOE(embedding_output)
         return output
