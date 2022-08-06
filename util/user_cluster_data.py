@@ -81,13 +81,13 @@ class UserClusterData:
         self.negative_retrieve_samples.append(retrieve_sample)
         return True
 
-    def retrieve_negative_sample(self, movies_df: pd.DataFrame) -> bool:
+    def retrieve_negative_sample(self, movies_df: pd.DataFrame, portion=1) -> bool:
         if self.negative_retrieve_sample_template is None:
             return False
 
         negative_movies_df = movies_df.loc[~movies_df['movie_id'].isin(self.positive_retrieve_movie_ids)].sample(
             frac=self.positive_retrieve_samples_num, replace=True)
-        for index in range(self.positive_retrieve_samples_num):
+        for index in range(0, self.positive_retrieve_samples_num, portion):
             movie_series = negative_movies_df.iloc[index]
             negative_retrieve_sample = RetrieveSample()
             negative_retrieve_sample.add_user_id(self.negative_retrieve_sample_template.user_id)
@@ -103,7 +103,7 @@ class UserClusterData:
         return True
 
     def get_rating_samples(self, portion: list[int]) -> (list[RatingSample], list[RatingSample], list[RatingSample]):
-        self.rating_samples.sort(key=lambda sample: sample.timestamp, reverse=False)
+        # self.rating_samples.sort(key=lambda sample: sample.timestamp, reverse=False)
         train_sample_num = math.floor(len(self.rating_samples) * portion[0] / sum(portion))
         val_sample_num = math.floor(len(self.rating_samples) * portion[1] / sum(portion))
         return self.rating_samples[0: train_sample_num], \
@@ -111,13 +111,15 @@ class UserClusterData:
                self.rating_samples[train_sample_num + val_sample_num: -1]
 
     def get_retrieve_samples(self, portion: list[int]) -> (list[RatingSample], list[RatingSample], list[RatingSample]):
-        self.positive_retrieve_samples.sort(key=lambda sample: sample.timestamp, reverse=False)
-        self.negative_retrieve_samples.sort(key=lambda sample: sample.timestamp, reverse=False)
-        train_sample_num = math.floor(len(self.rating_samples) * portion[0] / sum(portion))
-        val_sample_num = math.floor(len(self.rating_samples) * portion[1] / sum(portion))
-        return self.positive_retrieve_samples[0: train_sample_num] + \
-               self.negative_retrieve_samples[0: train_sample_num], \
-               self.positive_retrieve_samples[train_sample_num: train_sample_num + val_sample_num] + \
-               self.negative_retrieve_samples[train_sample_num: train_sample_num + val_sample_num], \
-               self.positive_retrieve_samples[train_sample_num + val_sample_num: -1] + \
-               self.negative_retrieve_samples[train_sample_num + val_sample_num: -1]
+        # self.positive_retrieve_samples.sort(key=lambda sample: sample.timestamp, reverse=False)
+        # self.negative_retrieve_samples.sort(key=lambda sample: sample.timestamp, reverse=False)
+        positive_train_sample_num = math.floor(len(self.positive_retrieve_samples) * portion[0] / sum(portion))
+        positive_val_sample_num = math.floor(len(self.positive_retrieve_samples) * portion[1] / sum(portion))
+        negative_train_sample_num = math.floor(len(self.negative_retrieve_samples) * portion[0] / sum(portion))
+        negative_val_sample_num = math.floor(len(self.negative_retrieve_samples) * portion[1] / sum(portion))
+        return self.positive_retrieve_samples[0: positive_train_sample_num] + \
+               self.negative_retrieve_samples[0: negative_train_sample_num], \
+               self.positive_retrieve_samples[positive_train_sample_num: positive_train_sample_num + positive_val_sample_num] + \
+               self.negative_retrieve_samples[negative_train_sample_num: negative_train_sample_num + negative_val_sample_num], \
+               self.positive_retrieve_samples[positive_train_sample_num + positive_val_sample_num: -1] + \
+               self.negative_retrieve_samples[negative_train_sample_num + negative_val_sample_num: -1]

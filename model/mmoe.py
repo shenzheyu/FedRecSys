@@ -51,8 +51,8 @@ class MMOE(nn.Module):
         self.experts = nn.ModuleList(
             [Expert(self.input_size, self.experts_out, self.experts_hidden) for i in range(self.num_experts)])
         self.w_gates = nn.ParameterList(
-            [nn.Parameter(torch.randn(input_size, num_experts), requires_grad=True) for i in range(self.tasks)])
-        self.towers = nn.ModuleList([Tower(self.experts_out, 1, self.towers_hidden) for i in range(self.tasks)])
+            [nn.Parameter(torch.randn(input_size, num_experts), requires_grad=True) for i in range(len(self.tasks))])
+        self.towers = nn.ModuleList([Tower(self.experts_out, self.tasks[i], self.towers_hidden) for i in range(len(self.tasks))])
 
     def forward(self, x):
         experts_o = [e(x) for e in self.experts]
