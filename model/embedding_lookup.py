@@ -1,40 +1,35 @@
 from numpy import ndarray
 from numpy import random
 
-from util.user_cluster_data import Sample
+from util.movielens_dataset import MovielensDataset
 
 
 class EmbeddingLookup:
-    def __init__(self, embedding_size):
+    def __init__(self, embedding_size: int, key: str):
         self.embedding_size = embedding_size
         self.embeddings: dict[int, ndarray] = {}
+        self.key = key
 
-    def get_embedding(self, key: int) -> ndarray:
-        if key not in self.embeddings.keys():
-            self.embeddings[key] = random.normal(loc=0.0, scale=1.0, size=self.embedding_size)
-        return self.embeddings[key]
+    def get_embedding(self, feature) -> ndarray:
+        if feature not in self.embeddings.keys():
+            self.embeddings[feature] = random.normal(loc=0.0, scale=1.0, size=self.embedding_size)
+        return self.embeddings[feature]
 
-    def update_embedding(self, key: int, embedding: list[float]):
-        self.embeddings[key] = ndarray(embedding)
+    def update_embedding(self, feature, embedding: list[float]):
+        self.embeddings[feature] = ndarray(embedding)
 
-    def samples2embedding(self, samples: list[Sample]) -> (list[list[float]], dict[int, int]):
-        embeddings = []
-        embedding_map: dict[int, int] = {}
-        index = 0
-        for sample in samples:
-            features = ['user_id/' + str(sample.user_id), 'gender/' + sample.gender,
-                        'age/' + str(sample.age), 'occupation/' + str(sample.occupation),
-                        'zip_code/' + sample.zip_code, 'movie_id/' + str(sample.movie_id),
-                        'title/' + sample.title, 'genres/' + sample.genres,
-                        'timestamp/' + str(sample.timestamp)]
-            for feature in features:
-                if hash(feature) in embedding_map.keys():
-                    continue
-                embeddings.append(self.get_embedding(hash(feature)).tolist())
-                embedding_map[hash(feature)] = index
-                index += 1
-        return embeddings, embedding_map
+    def get_embeddings(self, datasets: list[MovielensDataset]) -> (list[list[float]], dict):
+        embedding = []
+        embedding_map = {}
+        for dataset in datasets:
+            for i in range(dataset.__len__()):
+                features, _ = dataset.__getitem__(i)
+                feature = features[self.key]
+                if feature not in embedding_map.keys():
+                    embedding_map[feature] = len(embedding)
+                    embedding.append(self.get_embedding(feature))
+        return embedding, embedding_map
 
-    def update_embeddings(self, embeddings: list[list[float]], embedding_map: dict[int, int]):
-        for key, index in embedding_map.items():
-            self.update_embedding(key, embeddings[index])
+    def update_embeddings(self, embeddings: list[list[float]], embedding_map: dict):
+        for feature, index in embedding_map.items():
+            self.update_embedding(feature, embeddings[index])

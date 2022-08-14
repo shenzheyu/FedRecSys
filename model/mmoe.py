@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 
 class Expert(nn.Module):
@@ -8,7 +9,7 @@ class Expert(nn.Module):
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, output_size)
         self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(0.3)
+        self.dropout = nn.Dropout(0.1)
 
     def forward(self, x):
         out = self.fc1(x)
@@ -22,9 +23,10 @@ class Tower(nn.Module):
     def __init__(self, input_size, output_size, hidden_size):
         super(Tower, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, output_size)
         self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(0.4)
+        self.dropout = nn.Dropout(0.2)
+        self.need_sigmoid = output_size > 0
+        self.fc2 = nn.Linear(hidden_size, output_size)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -37,22 +39,21 @@ class Tower(nn.Module):
 
 
 class MMOE(nn.Module):
-    def __init__(self, input_size, num_experts, experts_out, experts_hidden, towers_hidden, tasks):
+    def __init__(self, input_size, num_experts, experts_out, experts_hidden, towers_hidden):
         super(MMOE, self).__init__()
         self.input_size = input_size
         self.num_experts = num_experts
         self.experts_out = experts_out
         self.experts_hidden = experts_hidden
         self.towers_hidden = towers_hidden
-        self.tasks = tasks
 
         self.softmax = nn.Softmax(dim=1)
 
         self.experts = nn.ModuleList(
             [Expert(self.input_size, self.experts_out, self.experts_hidden) for i in range(self.num_experts)])
         self.w_gates = nn.ParameterList(
-            [nn.Parameter(torch.randn(input_size, num_experts), requires_grad=True) for i in range(len(self.tasks))])
-        self.towers = nn.ModuleList([Tower(self.experts_out, self.tasks[i], self.towers_hidden) for i in range(len(self.tasks))])
+            [nn.Parameter(torch.randn(input_size, num_experts), requires_grad=True) for i in range(2)])
+        self.towers = nn.ModuleList([Tower(self.experts_out, 1, self.towers_hidden), Tower(self.experts_out, 1, self.towers_hidden)])
 
     def forward(self, x):
         experts_o = [e(x) for e in self.experts]
@@ -68,38 +69,56 @@ class MMOE(nn.Module):
 
 
 class SparseMMOE(nn.Module):
-    def __init__(self, feature_num, pretrained_embedding, embedding_map, num_experts, experts_out,
-                 experts_hidden, towers_hidden, tasks):
+    def __init__(self, embedding_list, pretrained_embeddings, embedding_maps):
         super(SparseMMOE, self).__init__()
-        self.embedding_size = len(pretrained_embedding[0])
-        input_size = self.embedding_size * feature_num
-        self.MMOE = MMOE(input_size, num_experts, experts_out, experts_hidden, towers_hidden, tasks)
-        self.embedding = nn.Embedding.from_pretrained(torch.tensor(pretrained_embedding))
-        self.embedding.requires_grad_(requires_grad=True)
-        self.embedding_map = embedding_map
+        self.MMOE = MMOE(input_size=73, num_experts=6, experts_out=32, experts_hidden=64, towers_hidden=8)
+        self.embeddings = nn.ModuleDict()
+        for embedding_key in embedding_list:
+            self.embeddings[embedding_key] = nn.Embedding.from_pretrained(embeddings=torch.FloatTensor(pretrained_embeddings[embedding_key]), freeze=False)
+        self.embedding_maps = embedding_maps
+        self.batch_norm = nn.BatchNorm1d(1)
+        # self.glove_embedding = load_glove()
+        # self.movie_title_lstm = nn.LSTM()
 
-    def forward(self, x):
-        if self.train():
-            embedding_input = torch.tensor([[self.embedding_map[feature.item()] for feature in features] for features in x])
-            embedding_output = self.embedding(embedding_input)
-        else:
-            embedding_input = []
-            sparse_feature_indexes = []
-            feature_index = 0
-            for features in x:
-                for feature in features:
-                    if feature in self.embedding_map:
-                        embedding_input.append(feature.item())
-                    else:
-                        embedding_input.append(0)
-                        sparse_feature_indexes.append(feature_index)
-                    feature_index += 1
-            embedding_input = torch.tensor(embedding_input)
-            embedding_output = self.embedding(embedding_input)
-            for sparse_feature_index in sparse_feature_indexes:
-                embedding_input[sparse_feature_index * self.embedding_size:
-                                (sparse_feature_index + 1) * self.embedding_size - 1] = 0
-        embedding_output = embedding_output.view([x.shape[0], -1])
+    def forward(self, features_list):
+        # sparse feature
+        user_id_input = self.embeddings['user_id'](torch.LongTensor([self.embedding_maps['user_id'][features['user_id']] for features in features_list]))
+        user_zipcode_input = self.embeddings['user_zipcode'](torch.LongTensor([self.embedding_maps['user_zipcode'][features['user_zipcode']] for features in features_list]))
+        movie_id_input = self.embeddings['movie_id'](torch.LongTensor([self.embedding_maps['movie_id'][features['movie_id']] for features in features_list]))
 
-        output = self.MMOE(embedding_output)
+        # dense feature
+        user_gender_input = torch.FloatTensor([[features['user_gender']] for features in features_list])
+        user_age_input = torch.FloatTensor([features['user_age'] for features in features_list])
+        user_occupation_input = torch.FloatTensor([features['user_occupation'] for features in features_list])
+        movie_year_input = torch.FloatTensor([[features['movie_year']] for features in features_list])
+        # if movie_year_input.shape[0] > 1:
+        #     movie_year_input = self.batch_norm(movie_id_input)
+        movie_genres_input = torch.FloatTensor([features['movie_genres'] for features in features_list])
+        rating_timestamp_input = torch.FloatTensor([[features['rating_timestamp']] for features in features_list])
+        # if rating_timestamp_input.shape[0] > 1:
+        #     rating_timestamp_input = self.batch_norm(rating_timestamp_input)
+
+        # sequence feature
+        # movie_title_input = self.movie_title_lstm(features['movie_title'])
+
+        mmoe_input = torch.cat((user_id_input, user_zipcode_input, movie_id_input, user_gender_input, user_age_input,
+                                user_occupation_input, movie_year_input, movie_genres_input, rating_timestamp_input), 1)
+
+        output = self.MMOE(mmoe_input)
         return output
+
+    def load_glove(self):
+        words = []
+        idx = 0
+        word2idx = {}
+        vectors = []
+
+        with open('data/glove.6B.100d.txt', 'rb') as f:
+            for l in f:
+                line = l.decode().split()
+                word = line[0]
+                words.append(word)
+                word2idx[word] = idx
+                idx += 1
+                vect = np.array(line[1:]).astype(np.float)
+                vectors.append(vect)

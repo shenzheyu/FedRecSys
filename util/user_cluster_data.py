@@ -81,7 +81,7 @@ class UserClusterData:
         self.negative_retrieve_samples.append(retrieve_sample)
         return True
 
-    def retrieve_negative_sample(self, movies_df: pd.DataFrame, portion=1) -> bool:
+    def generate_retrieve_negative_sample(self, movies_df: pd.DataFrame, portion=1) -> bool:
         if self.negative_retrieve_sample_template is None:
             return False
 
@@ -103,7 +103,6 @@ class UserClusterData:
         return True
 
     def get_rating_samples(self, portion: list[int]) -> (list[RatingSample], list[RatingSample], list[RatingSample]):
-        # self.rating_samples.sort(key=lambda sample: sample.timestamp, reverse=False)
         train_sample_num = math.floor(len(self.rating_samples) * portion[0] / sum(portion))
         val_sample_num = math.floor(len(self.rating_samples) * portion[1] / sum(portion))
         return self.rating_samples[0: train_sample_num], \
@@ -111,8 +110,6 @@ class UserClusterData:
                self.rating_samples[train_sample_num + val_sample_num: -1]
 
     def get_retrieve_samples(self, portion: list[int]) -> (list[RatingSample], list[RatingSample], list[RatingSample]):
-        # self.positive_retrieve_samples.sort(key=lambda sample: sample.timestamp, reverse=False)
-        # self.negative_retrieve_samples.sort(key=lambda sample: sample.timestamp, reverse=False)
         positive_train_sample_num = math.floor(len(self.positive_retrieve_samples) * portion[0] / sum(portion))
         positive_val_sample_num = math.floor(len(self.positive_retrieve_samples) * portion[1] / sum(portion))
         negative_train_sample_num = math.floor(len(self.negative_retrieve_samples) * portion[0] / sum(portion))

@@ -8,16 +8,16 @@ from util.user_cluster_data import RetrieveSample
 from util.user_cluster_data import UserClusterData
 
 
-def data_prepare(batch_size: int, embedding_lookup: EmbeddingLookup) \
+def data_prepare() \
         -> (Dataset, Dataset, Dataset, list[list[float]], dict[int, int]):
     user_column_names = ['user_id', 'gender', 'age', 'occupation', 'zip_code']
     movie_column_names = ['movie_id', 'title', 'genres']
     rating_column_names = ['user_id', 'movie_id', 'rating', 'timestamp']
 
-    users_df = pd.read_csv('data/users.dat', delimiter='::', header=None, names=user_column_names, engine='python')
-    movies_df = pd.read_csv('data/movies.dat', delimiter='::', header=None, names=movie_column_names,
+    users_df = pd.read_csv('data/MovieLens1M/users.dat', delimiter='::', header=None, names=user_column_names, engine='python')
+    movies_df = pd.read_csv('data/MovieLens1M/movies.dat', delimiter='::', header=None, names=movie_column_names,
                             encoding='latin-1', engine='python')
-    ratings_df = pd.read_csv('data/ratings.dat', delimiter='::', header=None, names=rating_column_names,
+    ratings_df = pd.read_csv('data/MovieLens1M/ratings.dat', delimiter='::', header=None, names=rating_column_names,
                              engine='python')
 
     print(f'load {users_df.shape[0]} users from data/users.dat')
@@ -26,8 +26,8 @@ def data_prepare(batch_size: int, embedding_lookup: EmbeddingLookup) \
 
     user_cluster_datas = {}
     for index, rating_series in ratings_df.iterrows():
-        # if index > 100000:
-        #     break
+        if index > 10000:
+            break
 
         if index % 10000 == 0:
             print(f'process {index} rating row')
@@ -60,9 +60,13 @@ def data_prepare(batch_size: int, embedding_lookup: EmbeddingLookup) \
     print(f'processed {len(user_cluster_datas)} users\' data')
 
     for user_cluster_data in user_cluster_datas.values():
-        user_cluster_data.retrieve_negative_sample(movies_df)
-    print('negative sample for retrieve data')
+        user_cluster_data.generate_retrieve_negative_sample(movies_df)
+    print('generate negative sample for retrieve data')
 
+    return user_cluster_datas
+
+
+def get_dataset(user_cluster_datas: {int: UserClusterData}):
     train_rating_samples = []
     train_retrieve_samples = []
     val_rating_samples = []
@@ -86,11 +90,5 @@ def data_prepare(batch_size: int, embedding_lookup: EmbeddingLookup) \
     val_dataset = MovielensDataset(val_rating_samples, val_retrieve_samples)
     test_dataset = MovielensDataset(test_rating_samples, test_retrieve_samples)
 
-    print('produce dataset for train, val and test')
-
-    embedding, embedding_map = embedding_lookup.samples2embedding(train_rating_samples + train_retrieve_samples +
-                                                                  val_rating_samples + val_retrieve_samples +
-                                                                  test_rating_samples + test_retrieve_samples)
-    print('get embedding and correspond map')
-
-    return train_dataset, val_dataset, test_dataset, embedding, embedding_map
+    print('generate dataset for train, val and test')
+    return train_dataset, val_dataset, test_dataset
