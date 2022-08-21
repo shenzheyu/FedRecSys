@@ -26,8 +26,8 @@ def data_prepare() \
 
     user_cluster_datas = {}
     for index, rating_series in ratings_df.iterrows():
-        if index > 10000:
-            break
+        # if index > 10000:
+        #     break
 
         if index % 10000 == 0:
             print(f'process {index} rating row')

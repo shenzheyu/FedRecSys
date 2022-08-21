@@ -55,6 +55,8 @@ class MMOE(nn.Module):
             [nn.Parameter(torch.randn(input_size, num_experts), requires_grad=True) for i in range(2)])
         self.towers = nn.ModuleList([Tower(self.experts_out, 1, self.towers_hidden), Tower(self.experts_out, 1, self.towers_hidden)])
 
+        self.layer_norm = nn.LayerNorm(experts_out)
+
     def forward(self, x):
         experts_o = [e(x) for e in self.experts]
         experts_o_tensor = torch.stack(experts_o)
@@ -62,7 +64,7 @@ class MMOE(nn.Module):
         gates_o = [self.softmax(x @ g) for g in self.w_gates]
 
         tower_input = [g.t().unsqueeze(2).expand(-1, -1, self.experts_out) * experts_o_tensor for g in gates_o]
-        tower_input = [torch.sum(ti, dim=0) for ti in tower_input]
+        tower_input = [self.layer_norm(torch.sum(ti, dim=0)) for ti in tower_input]
 
         final_output = [t(ti) for t, ti in zip(self.towers, tower_input)]
         return final_output
@@ -76,7 +78,9 @@ class SparseMMOE(nn.Module):
         for embedding_key in embedding_list:
             self.embeddings[embedding_key] = nn.Embedding.from_pretrained(embeddings=torch.FloatTensor(pretrained_embeddings[embedding_key]), freeze=False)
         self.embedding_maps = embedding_maps
-        self.batch_norm = nn.BatchNorm1d(1)
+        self.batch_norms = nn.ModuleDict()
+        self.batch_norms['movie_year'] = nn.BatchNorm1d(1)
+        self.batch_norms['rating_timestamp'] = nn.BatchNorm1d(1)
         # self.glove_embedding = load_glove()
         # self.movie_title_lstm = nn.LSTM()
 
@@ -91,12 +95,10 @@ class SparseMMOE(nn.Module):
         user_age_input = torch.FloatTensor([features['user_age'] for features in features_list])
         user_occupation_input = torch.FloatTensor([features['user_occupation'] for features in features_list])
         movie_year_input = torch.FloatTensor([[features['movie_year']] for features in features_list])
-        # if movie_year_input.shape[0] > 1:
-        #     movie_year_input = self.batch_norm(movie_id_input)
+        movie_year_input = self.batch_norms['movie_year'](movie_year_input)
         movie_genres_input = torch.FloatTensor([features['movie_genres'] for features in features_list])
         rating_timestamp_input = torch.FloatTensor([[features['rating_timestamp']] for features in features_list])
-        # if rating_timestamp_input.shape[0] > 1:
-        #     rating_timestamp_input = self.batch_norm(rating_timestamp_input)
+        rating_timestamp_input = self.batch_norms['rating_timestamp'](rating_timestamp_input)
 
         # sequence feature
         # movie_title_input = self.movie_title_lstm(features['movie_title'])

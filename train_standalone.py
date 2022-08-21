@@ -14,11 +14,12 @@ from util.data_prepare import get_dataset
 
 
 def train(model: nn.Module, train_dataloader: DataLoader, val_dataloader: DataLoader, test_dataloader: DataLoader):
-    n_epochs = 1000
+    n_epochs = 100
     lr = 0.001
+    weight_decay = 1e-6
     loss_fn_1 = nn.MSELoss()
     loss_fn_2 = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(params=model.parameters(), lr=lr)
+    optimizer = optim.Adam(params=model.parameters(), lr=lr, weight_decay=weight_decay)
     losses = []
 
     print('start train')
@@ -33,10 +34,9 @@ def train(model: nn.Module, train_dataloader: DataLoader, val_dataloader: DataLo
             label_hat_1 = labels_hat[0][['rating' in label for label in labels], 0] * 5
             label_hat_2 = labels_hat[0][['retrieve' in label for label in labels], 0]
 
-            loss_1 = loss_fn_1(label_1.float(), label_hat_1)
-            loss_2 = loss_fn_2(label_2.float(), label_hat_2)
-            # loss = loss_1 + loss_2
-            loss = loss_1
+            loss_1 = loss_fn_1(label_hat_1, label_1)
+            loss_2 = loss_fn_2(label_hat_2, label_2)
+            loss = loss_1 + loss_2
             loss.backward()
 
             optimizer.step()
@@ -54,8 +54,8 @@ def train(model: nn.Module, train_dataloader: DataLoader, val_dataloader: DataLo
               f'train task 1 rmse: {train_rmse_1:.3f}, '
               f'train task 2 auc: {train_auc_2:.3f}')
 
-    weighted_precision_1, auc_2 = test(model, test_dataloader)
-    print(f'val task 1 weighted precision: {weighted_precision_1:.3f}, val task 2 auc: {auc_2:.3f}')
+    rmse_1, auc_2 = test(model, test_dataloader)
+    print(f'test task 1 rmse: {rmse_1:.3f}, test task 2 auc: {auc_2:.3f}')
 
 
 def test(model: nn.Module, dataloader: DataLoader):
