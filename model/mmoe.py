@@ -71,13 +71,15 @@ class MMOE(nn.Module):
 
 
 class SparseMMOE(nn.Module):
-    def __init__(self, embedding_list, pretrained_embeddings, embedding_maps):
+    def __init__(self, embedding_list, pretrained_embeddings=None, embedding2idxes=None):
         super(SparseMMOE, self).__init__()
         self.MMOE = MMOE(input_size=73, num_experts=6, experts_out=32, experts_hidden=64, towers_hidden=8)
         self.embeddings = nn.ModuleDict()
-        for embedding_key in embedding_list:
-            self.embeddings[embedding_key] = nn.Embedding.from_pretrained(embeddings=torch.FloatTensor(pretrained_embeddings[embedding_key]), freeze=False)
-        self.embedding_maps = embedding_maps
+        if pretrained_embeddings is not None:
+            for embedding_key in embedding_list:
+                self.embeddings[embedding_key] = nn.Embedding.from_pretrained(embeddings=torch.FloatTensor(pretrained_embeddings[embedding_key]), freeze=False)
+        if embedding2idxes is not None:
+            self.embedding2idxes = embedding2idxes
         self.batch_norms = nn.ModuleDict()
         self.batch_norms['movie_year'] = nn.BatchNorm1d(1)
         self.batch_norms['rating_timestamp'] = nn.BatchNorm1d(1)
@@ -86,9 +88,9 @@ class SparseMMOE(nn.Module):
 
     def forward(self, features_list):
         # sparse feature
-        user_id_input = self.embeddings['user_id'](torch.LongTensor([self.embedding_maps['user_id'][features['user_id']] for features in features_list]))
-        user_zipcode_input = self.embeddings['user_zipcode'](torch.LongTensor([self.embedding_maps['user_zipcode'][features['user_zipcode']] for features in features_list]))
-        movie_id_input = self.embeddings['movie_id'](torch.LongTensor([self.embedding_maps['movie_id'][features['movie_id']] for features in features_list]))
+        user_id_input = self.embeddings['user_id'](torch.LongTensor([self.embedding2idxes['user_id'][features['user_id']] for features in features_list]))
+        user_zipcode_input = self.embeddings['user_zipcode'](torch.LongTensor([self.embedding2idxes['user_zipcode'][features['user_zipcode']] for features in features_list]))
+        movie_id_input = self.embeddings['movie_id'](torch.LongTensor([self.embedding2idxes['movie_id'][features['movie_id']] for features in features_list]))
 
         # dense feature
         user_gender_input = torch.FloatTensor([[features['user_gender']] for features in features_list])
