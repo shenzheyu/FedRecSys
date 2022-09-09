@@ -57,11 +57,11 @@ def data_prepare() \
             user_cluster_datas[user_id] = user_cluster_data
         user_cluster_data.add_rating_sample(rating_sample)
         user_cluster_data.add_positive_retrieve_sample(retrieve_sample)
-    print(f'processed {len(user_cluster_datas)} users\' data')
+    # print(f'processed {len(user_cluster_datas)} users\' data')
 
     for user_cluster_data in user_cluster_datas.values():
         user_cluster_data.generate_retrieve_negative_sample(movies_df)
-    print('generate negative sample for retrieve data')
+    # print('generate negative sample for retrieve data')
 
     return user_cluster_datas
 
@@ -84,11 +84,11 @@ def get_dataset(user_cluster_datas: {int: UserClusterData}):
         val_retrieve_samples += user_val_retrieve_samples
         test_rating_samples += user_test_rating_samples
         test_retrieve_samples += user_test_retrieve_samples
-    print('merge samples for train, val and test')
+    # print('merge samples for train, val and test')
 
     train_dataset = MovielensDataset(train_rating_samples, train_retrieve_samples)
     val_dataset = MovielensDataset(val_rating_samples, val_retrieve_samples)
     test_dataset = MovielensDataset(test_rating_samples, test_retrieve_samples)
 
-    print('generate dataset for train, val and test')
+    # print('generate dataset for train, val and test')
     return train_dataset, val_dataset, test_dataset

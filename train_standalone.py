@@ -18,7 +18,7 @@ def train(model: nn.Module, train_dataloader: DataLoader, val_dataloader: DataLo
     lr = 0.001
     weight_decay = 1e-5
     loss_fn_1 = nn.MSELoss()
-    loss_fn_2 = nn.CrossEntropyLoss()
+    loss_fn_2 = nn.BCELoss()
     optimizer = optim.Adam(params=model.parameters(), lr=lr, weight_decay=weight_decay)
     losses = []
 
@@ -35,7 +35,7 @@ def train(model: nn.Module, train_dataloader: DataLoader, val_dataloader: DataLo
             label_hat_2 = labels_hat[0][['retrieve' in label for label in labels], 0]
 
             loss_1 = loss_fn_1(label_hat_1, label_1)
-            loss_2 = loss_fn_2(label_hat_2, label_2) * 0.015
+            loss_2 = loss_fn_2(label_hat_2, label_2)
             loss = loss_1 + loss_2
             loss.backward()
 
