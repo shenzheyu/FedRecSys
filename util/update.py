@@ -39,17 +39,39 @@ class LocalUpdate(object):
         Returns train, validation and test dataloaders for a given dataset
         and user indexes.
         """
-        # split indexes for train, validation, and test (80, 10, 10)
-        idxs_train = idxs[:int(0.8*len(idxs))]
-        idxs_val = idxs[int(0.8*len(idxs)):int(0.9*len(idxs))]
-        idxs_test = idxs[int(0.9*len(idxs)):]
+        # split indexes for train, validation, and test (60, 20, 20)
+        idxs_train = idxs[:int(0.6*len(idxs))]
+        idxs_val = idxs[int(0.6*len(idxs)): int(0.8*len(idxs))]
+        idxs_test = idxs[int(0.8*len(idxs)):]
 
         trainloader = DataLoader(DatasetSplit(dataset, idxs_train),
                                  batch_size=self.args.local_bs, shuffle=True)
         validloader = DataLoader(DatasetSplit(dataset, idxs_val),
-                                 batch_size=int(len(idxs_val)/10), shuffle=False)
+                                 batch_size=self.args.local_bs, shuffle=False)
         testloader = DataLoader(DatasetSplit(dataset, idxs_test),
-                                batch_size=int(len(idxs_test)/10), shuffle=False)
+                                batch_size=self.args.local_bs, shuffle=False)
+
+        print(f'train dataset len: {len(idxs_train)}')
+        train_positive_num = {}
+        for i in range(self.args.task_num):
+            train_positive_num[i] = 0
+        for idx in idxs_train:
+            _, _, labels = dataset[idx]
+            for i in range(self.args.task_num):
+                train_positive_num[i] += labels[i]
+        for i in range(self.args.task_num):
+            print(f'task {i} train dataset positive num: {train_positive_num[i]}')
+
+        print(f'val dataset len: {len(idxs_test)}')
+        val_positive_num = {}
+        for i in range(self.args.task_num):
+            val_positive_num[i] = 0
+        for idx in idxs_val:
+            _, _, labels = dataset[idx]
+            for i in range(self.args.task_num):
+                val_positive_num[i] += labels[i]
+        for i in range(self.args.task_num):
+            print(f'task {i} val dataset positive num: {val_positive_num[i]}')
         return trainloader, validloader, testloader
 
     def update_weights(self, model, global_round):
@@ -68,6 +90,10 @@ class LocalUpdate(object):
         for iter in range(self.args.local_ep):
             batch_loss = []
             for batch_idx, (categorical_fields, numerical_fields, labels) in enumerate(self.trainloader):
+                # skip the one-size batch to avoid error in batch_norm
+                if categorical_fields.size(0) <= 1:
+                    continue
+
                 categorical_fields, numerical_fields, labels = categorical_fields.to(self.device), numerical_fields.to(
                     self.device), labels.to(self.device)
 
@@ -80,9 +106,10 @@ class LocalUpdate(object):
                 model.zero_grad()
                 loss.backward()
                 optimizer.step()
-                batch_loss += loss.item()
+                batch_loss.append(loss.item())
 
-            epoch_loss.append(sum(batch_loss)/len(batch_loss))
+            if len(batch_loss) != 0:
+                epoch_loss.append(sum(batch_loss)/len(batch_loss))
 
         return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
 
@@ -96,17 +123,23 @@ class LocalUpdate(object):
             labels_dict[i], predicts_dict[i], loss_dict[i] = list(), list(), list()
 
         with torch.no_grad():
-            for batch_idx, (categorical_fields, numerical_fields, labels) in enumerate(self.testloader):
+            for batch_idx, (categorical_fields, numerical_fields, labels) in enumerate(self.validloader):
                 categorical_fields, numerical_fields, labels = categorical_fields.to(self.device), numerical_fields.to(
                     self.device), labels.to(self.device)
 
                 # Inference
                 y = model(categorical_fields, numerical_fields)
                 for i in range(self.args.task_num):
-                    labels_dict[i].extend(labels[:, i].tolist())
-                    predicts_dict[i].extend(y[i].tolist())
-                    loss_dict[i].extend(
-                        self.criterion(y[i], labels[:, i].float()).tolist())
+                    if y[i].size(0) <= 1:
+                        labels_dict[i].append(labels[:, i].tolist())
+                        predicts_dict[i].append(y[i].tolist())
+                        loss_dict[i].append(
+                            self.criterion(y[i], labels[:, i].float()).tolist())
+                    else:
+                        labels_dict[i].extend(labels[:, i].tolist())
+                        predicts_dict[i].extend(y[i].tolist())
+                        loss_dict[i].append(
+                            self.criterion(y[i], labels[:, i].float()).tolist())
 
         auc_results, loss_results = list(), list()
         for i in range(self.args.task_num):
@@ -115,7 +148,7 @@ class LocalUpdate(object):
         return auc_results, loss_results
 
 
-def test_inference(args, model, test_dataset):
+def test_inference(args, model, test_dataset, user_groups):
     """ Returns the test accuracy and loss.
     """
 
@@ -137,10 +170,16 @@ def test_inference(args, model, test_dataset):
             # Inference
             y = model(categorical_fields, numerical_fields)
             for i in range(args.task_num):
-                labels_dict[i].extend(labels[:, i].tolist())
-                predicts_dict[i].extend(y[i].tolist())
-                loss_dict[i].extend(
-                    criterion(y[i], labels[:, i].float()).tolist())
+                if y[i].size(0) <= 1:
+                    labels_dict[i].append(labels[:, i].tolist())
+                    predicts_dict[i].append(y[i].tolist())
+                    loss_dict[i].append(
+                        criterion(y[i], labels[:, i].float()).tolist())
+                else:
+                    labels_dict[i].extend(labels[:, i].tolist())
+                    predicts_dict[i].extend(y[i].tolist())
+                    loss_dict[i].append(
+                        criterion(y[i], labels[:, i].float()).tolist())
 
     auc_results, loss_results = list(), list()
     for i in range(args.task_num):

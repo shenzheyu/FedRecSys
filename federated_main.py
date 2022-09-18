@@ -15,7 +15,7 @@ from tensorboardX import SummaryWriter
 
 from util.options import args_parser
 from util.update import LocalUpdate, test_inference
-from util.utils import get_model, get_dataset, average_weights, exp_details
+from util.utils import get_model, get_dataset, average_weights, average_embeddings, exp_details
 
 
 if __name__ == '__main__':
@@ -31,9 +31,9 @@ if __name__ == '__main__':
     device = torch.device(args.device)
 
     # load dataset and user groups
-    dataset = get_dataset(args.dataset_name, os.path.join(args.dataset_path, args.dataset_name) + '/data.csv')
-    user_num = dataset.user_num
-    user_groups = dataset.user_groups
+    dataset, user_groups = get_dataset(args.dataset_name, os.path.join(args.dataset_path, args.dataset_name) + '/test.csv',
+                                      args.num_users)
+    user_num = len(user_groups.keys())
 
     # BUILD MODEL
     field_dims = dataset.field_dims
@@ -50,10 +50,7 @@ if __name__ == '__main__':
 
     # Training
     train_loss, train_accuracy = [], []
-    val_acc_list, net_list = [], []
-    cv_loss, cv_acc = [], []
-    print_every = 2
-    val_loss_pre, counter = 0, 0
+    print_every = 1
 
     for epoch in tqdm(range(args.epochs)):
         local_weights, local_losses = [], []
@@ -61,7 +58,7 @@ if __name__ == '__main__':
 
         global_model.train()
         m = max(int(args.frac * user_num), 1)
-        idxs_users = np.random.choice(range(user_num), m, replace=False)
+        idxs_users = np.random.choice(list(user_groups.keys()), m, replace=False)
 
         for idx in idxs_users:
             local_model = LocalUpdate(args=args, dataset=dataset,
@@ -71,8 +68,14 @@ if __name__ == '__main__':
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
 
-        # update global weights
-        global_weights = average_weights(local_weights)
+        # average embedding weight
+        embedding_weight = average_embeddings(local_weights, global_weights, args.embedding_name)
+
+        # average global weights
+        global_weights = average_weights(local_weights, args.embedding_name)
+
+        # update global embedding weight
+        global_model.state_dict()[args.embedding_name] = copy.deepcopy(embedding_weight)
 
         # update global weights
         global_model.load_state_dict(global_weights)
@@ -98,7 +101,10 @@ if __name__ == '__main__':
             print('Train Accuracy: {:.2f}% \n'.format(100*train_accuracy[-1]))
 
     # Test inference after completion of training
-    test_acc, test_loss = test_inference(args, global_model, dataset)
+    test_idxs = []
+    for idxs in user_groups.values():
+        test_idxs.extend(idxs[int(0.8*len(idxs)):])
+    test_acc, test_loss = test_inference(args, global_model, dataset[test_idxs])
 
     print(f' \n Results after {args.epochs} global rounds of training:')
     print("|---- Avg Train Accuracy: {:.2f}%".format(100*train_accuracy[-1]))

@@ -12,11 +12,10 @@ class AliExpressDataset(torch.utils.data.Dataset):
         Li, Pengcheng, et al. Improving multi-scenario learning to rank in e-commerce by exploiting task relationships in the label space. CIKM 2020.
     """
 
-    def __init__(self, dataset_path):
+    def __init__(self, dataset_path, groups_num):
         data_frame = pd.read_csv(dataset_path)
-        self.user_num = data_frame.search_id.nunique()
         user_ids = data_frame.search_id.unique().tolist()
-        self.user_groups = self.get_user_groups(data_frame, user_ids)
+        self.user_groups = self.get_user_groups(data_frame, user_ids, groups_num)
         data = data_frame.to_numpy()[:, 0:]
         self.categorical_data = data[:, :17].astype(np.int)
         self.numerical_data = data[:, 17: -2].astype(np.float32)
@@ -30,12 +29,19 @@ class AliExpressDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         return self.categorical_data[index], self.numerical_data[index], self.labels[index]
 
-    def get_user_groups(self, data_frame, user_ids):
+    def get_user_groups(self, data_frame, user_ids, groups_num=0):
         user_groups = {}
         for user_id in user_ids:
             user_groups[user_id] = []
         for index, row in data_frame.iterrows():
             user_groups[row['search_id']].append(index)
-            # series = (data_frame.search_id == user_id)
-            # user_groups[user_id] = series[series].index.tolist()
-        return user_groups
+
+        if groups_num > 0:
+            merged_groups = {}
+            for idx in range(groups_num):
+                merged_groups[idx] = []
+            for user_id, idxs in user_groups.items():
+                merged_groups[user_id % groups_num].extend(idxs)
+        else:
+            merged_groups = user_groups
+        return merged_groups
