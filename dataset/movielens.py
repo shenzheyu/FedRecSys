@@ -3,23 +3,15 @@ import pandas as pd
 import torch
 
 
-class AliExpressDataset(torch.utils.data.Dataset):
-    """
-    AliExpress Dataset
-    This is a dataset gathered from real-world traffic logs of the search system in AliExpress
-    Reference:
-        https://tianchi.aliyun.com/dataset/dataDetail?dataId=74690
-        Li, Pengcheng, et al. Improving multi-scenario learning to rank in e-commerce by exploiting task relationships in the label space. CIKM 2020.
-    """
-
+class MovieLensDataset(torch.utils.data.Dataset):
     def __init__(self, dataset_path, groups_num=0):
         data_frame = pd.read_csv(dataset_path)
-        user_ids = data_frame.search_id.unique().tolist()
+        user_ids = data_frame.user_id.unique().tolist()
         self.user_groups = self.get_user_groups(data_frame, user_ids, groups_num)
         data = data_frame.to_numpy()[:, 0:]
-        self.categorical_data = data[:, :17].astype(np.int)
-        self.numerical_data = data[:, 17: -2].astype(np.float32)
-        self.labels = data[:, -2:].astype(np.float32)
+        self.categorical_data = data[:, :24].astype(np.int)
+        self.numerical_data = data[:, 24: -1].astype(np.float32)
+        self.labels = data[:, -1].astype(np.float32)
         self.numerical_num = self.numerical_data.shape[1]
         self.field_dims = np.max(self.categorical_data, axis=0) + 1
 
@@ -34,7 +26,7 @@ class AliExpressDataset(torch.utils.data.Dataset):
         for user_id in user_ids:
             user_groups[user_id] = []
         for index, row in data_frame.iterrows():
-            user_groups[row['search_id']].append(index)
+            user_groups[row['user_id']].append(index)
 
         if groups_num > 0:
             merged_groups = {}
