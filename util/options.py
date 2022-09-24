@@ -9,7 +9,7 @@ def args_parser():
     parser = argparse.ArgumentParser()
 
     # federated arguments (Notation for the arguments followed from paper)
-    parser.add_argument('--epochs', type=int, default=2,
+    parser.add_argument('--epoch', type=int, default=50,
                         help="number of rounds of training")
     parser.add_argument('--num_users', type=int, default=100,
                         help="number of users: K")
@@ -29,7 +29,6 @@ def args_parser():
                         choices=['AliExpress_NL', 'AliExpress_ES', 'AliExpress_FR', 'AliExpress_US', 'MovieLens1M'])
     parser.add_argument('--dataset_path', default='./data/')
     parser.add_argument('--model_name', default='mmoe', choices=['mmoe', 'dlrm'])
-    parser.add_argument('--epoch', type=int, default=50)
     parser.add_argument('--task_num', type=int, default=2)
     parser.add_argument('--expert_num', type=int, default=8)
     parser.add_argument('--learning_rate', type=float, default=0.001)
