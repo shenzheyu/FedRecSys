@@ -9,6 +9,7 @@ class DLRMModel(torch.nn.Module):
 
     Reference:
         Maxim Naumov, et al. Deep Learning Recommendation Model for Personalization and Recommendation Systems.
+        https://github.com/facebookresearch/dlrm/blob/main/dlrm_s_pytorch.py
     """
 
     def __init__(self, categorical_field_dims, numerical_num, embed_dim, bottom_mlp_dims, up_mlp_dims, dropout):
