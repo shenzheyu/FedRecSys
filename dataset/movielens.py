@@ -7,11 +7,11 @@ class MovieLensDataset(torch.utils.data.Dataset):
     def __init__(self, dataset_path, groups_num=0):
         data_frame = pd.read_csv(dataset_path)
         user_ids = data_frame.user_id.unique().tolist()
-        self.user_groups = self.get_user_groups(data_frame, user_ids, groups_num)
+        # self.user_groups = self.get_user_groups(data_frame, user_ids, groups_num)
         data = data_frame.to_numpy()[:, 0:]
         self.categorical_data = data[:, :24].astype(np.int)
         self.numerical_data = data[:, 24: -1].astype(np.float32)
-        self.labels = data[:, -1].astype(np.float32)
+        self.labels = np.expand_dims(data[:, -1].astype(np.float32), axis=1) / 5
         self.numerical_num = self.numerical_data.shape[1]
         self.field_dims = np.max(self.categorical_data, axis=0) + 1
 
