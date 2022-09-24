@@ -117,6 +117,7 @@ def test(model, data_loader, task_num, criterion, evaluation, device):
             categorical_fields, numerical_fields, labels = categorical_fields.to(device), numerical_fields.to(
                 device), labels.to(device)
             y = model(categorical_fields, numerical_fields)
+            y = y.to(device)
             for i in range(task_num):
                 labels_dict[i].extend(labels[:, i].tolist())
                 predicts_dict[i].extend(y[i].tolist())
