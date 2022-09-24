@@ -12,6 +12,7 @@ from dataset.movielens import MovieLensDataset
 from model.dlrm import DLRMModel
 from model.mmoe_v2 import MMoEModel
 from util.options import args_parser
+from util.utils import count_parameters
 
 
 def get_dataset(name, path):
@@ -85,10 +86,11 @@ class EarlyStopper(object):
             return False
 
 
-def train(model, optimizer, data_loader, criterion, device, log_interval=100):
+def train(args, model, optimizer, data_loader, criterion, device, log_interval=100):
     model.train()
     total_loss = 0
     loader = tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)
+
     for i, (categorical_fields, numerical_fields, labels) in enumerate(loader):
         categorical_fields, numerical_fields, labels = categorical_fields.to(device), numerical_fields.to(
             device), labels.to(device)
@@ -106,6 +108,18 @@ def train(model, optimizer, data_loader, criterion, device, log_interval=100):
             loader.set_postfix(loss=total_loss / log_interval)
             total_loss = 0
 
+        # Export the model
+        if not args.is_onnx_exported:
+            torch.onnx.export(model,  # model being run
+                              (categorical_fields, numerical_fields),  # model input (or a tuple for multiple inputs)
+                              args.model_name + ".onnx",  # where to save the model (can be a file or file-like object)
+                              export_params=True,  # store the trained parameter weights inside the model file
+                              opset_version=10,  # the ONNX version to export the model to
+                              do_constant_folding=False,  # whether to execute constant folding for optimization
+                              input_names=['input'],  # the model's input names
+                              output_names=['output'],  # the model's output names
+                              )
+            args.is_onnx_exported = True
 
 def test(model, data_loader, task_num, criterion, evaluation, device):
     model.eval()
@@ -128,7 +142,7 @@ def test(model, data_loader, task_num, criterion, evaluation, device):
     return evaluation_results, loss_results
 
 
-def main(dataset_name,
+def main(args, dataset_name,
          dataset_path,
          task_num,
          expert_num,
@@ -153,13 +167,16 @@ def main(dataset_name,
     field_dims = dataset.field_dims
     numerical_num = dataset.numerical_num
     model = get_model(model_name, field_dims, numerical_num, task_num, expert_num, embed_dim).to(device)
+    print(model)
+    print("model_size = {}".format(count_parameters(model)))  # DLRM - 1.4M
+
     criterion = get_criterion(criterion_name)
     evaluation_func = get_evaluation(evaluation_name)
     optimizer = torch.optim.Adam(params=model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     save_path = f'{save_dir}/{dataset_name}_{model_name}.pt'
     early_stopper = EarlyStopper(num_trials=2, save_path=save_path)
     for epoch_i in range(epoch):
-        train(model, optimizer, train_data_loader, criterion, device)
+        train(args, model, optimizer, train_data_loader, criterion, device)
         evaluation, loss = test(model, test_data_loader, task_num, criterion, evaluation_func, device)
         print('epoch:', epoch_i)
         for i in range(task_num):
@@ -183,7 +200,7 @@ def main(dataset_name,
 
 if __name__ == '__main__':
     args = args_parser()
-    main(args.dataset_name,
+    main(args, args.dataset_name,
          args.dataset_path,
          args.task_num,
          args.expert_num,

@@ -55,5 +55,8 @@ def args_parser():
                         help='rounds of early stopping')
     parser.add_argument('--verbose', type=int, default=1, help='verbose')
     parser.add_argument('--seed', type=int, default=1, help='random seed')
+
+    parser.add_argument('--is_onnx_exported', type=bool, default=False,
+                        help="whether or not to save ONNX")
     args = parser.parse_args()
     return args
