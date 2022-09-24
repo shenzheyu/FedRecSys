@@ -52,6 +52,15 @@ df_category_data = df_data[category_cols]
 df_numerical_data = df_data[numerical_cols]
 df_label_data = df_data[label_col]
 
+# user_id,movie_id,
+# categorical_2 (gender),
+# categorical_3 (age),
+# categorical_4 (occupation),
+# categorical_5 (zip_code),
+# categorical_6,categorical_7,categorical_8,categorical_9,categorical_10,categorical_11,categorical_12,categorical_13,categorical_14,categorical_15,categorical_16,categorical_17,categorical_18,categorical_19,categorical_20,categorical_21,categorical_22,categorical_23
+# numerical_1 (timestamp)
+# numerical_2 (year)
+# rating (label)
 new_category_cols = ['user_id'] + ['movie_id'] + ['categorical_{}'.format(i) for i in range(2, len(category_cols))]
 df_category_data.columns = new_category_cols
 new_numerical_cols = ['numerical_{}'.format(i) for i in range(1, len(numerical_cols) + 1)]
