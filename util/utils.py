@@ -1,17 +1,21 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# Python version: 3.6
-
 import copy
+
 import torch
+from sklearn.metrics import mean_squared_error
+from sklearn.metrics import roc_auc_score
 
 from dataset.aliexpress import AliExpressDataset
+from dataset.movielens import MovieLensDataset
+from model.dlrm import DLRMModel
 from model.mmoe_v2 import MMoEModel
 
 
 def get_dataset(name, path, groups_num):
     if 'AliExpress' in name:
         dataset = AliExpressDataset(path, groups_num)
+        return dataset, dataset.user_groups
+    elif 'MovieLens' in name:
+        dataset = MovieLensDataset(path, groups_num)
         return dataset, dataset.user_groups
     else:
         raise ValueError('unknown dataset name: ' + name)
@@ -21,13 +25,40 @@ def get_model(name, categorical_field_dims, numerical_num, task_num, expert_num,
     """
     Hyperparameters are empirically determined, not opitmized.
     """
-
     if name == 'mmoe':
         print("Model: MMoE")
         return MMoEModel(categorical_field_dims, numerical_num, embed_dim=embed_dim, bottom_mlp_dims=(512, 256),
                          tower_mlp_dims=(128, 64), task_num=task_num, expert_num=expert_num, dropout=0.2)
+    if name == "dlrm":
+        print("Model: DLRM")
+        return DLRMModel(categorical_field_dims, numerical_num, embed_dim=embed_dim, bottom_mlp_dims=(32, 16),
+                         up_mlp_dims=(256, 128, 64), dropout=0.2)
     else:
         raise ValueError('unknown model name: ' + name)
+
+
+def get_criterion(name, device):
+    criterion = []
+    for n in name.split(','):
+        if n == 'bce':
+            criterion.append(torch.nn.BCELoss().to(device))
+        elif n == 'mse':
+            criterion.append(torch.nn.MSELoss(reduction='mean').to(device))
+        else:
+            raise ValueError('unknown criterion name: ' + n)
+    return criterion
+
+
+def get_evaluation(name):
+    evaluation = []
+    for n in name.split(','):
+        if n == 'auc':
+            evaluation.append(roc_auc_score)
+        elif n == 'rmse':
+            evaluation.append(lambda y, y_hat: mean_squared_error(y, y_hat, squared=False))
+        else:
+            raise ValueError('unknown evaluation name: ' + n)
+    return evaluation
 
 
 def average_weights(w, embedding_name):

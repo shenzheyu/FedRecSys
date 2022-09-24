@@ -1,12 +1,11 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# Python version: 3.6
-
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
 from sklearn.metrics import roc_auc_score
+
+from util.utils import get_criterion
+from util.utils import get_evaluation
 
 
 class DatasetSplit(Dataset):
@@ -31,8 +30,8 @@ class LocalUpdate(object):
         self.trainloader, self.validloader, self.testloader = self.train_val_test(
             dataset, list(idxs))
         self.device = torch.device(args.device)
-        # Default criterion set to BCE loss function
-        self.criterion = nn.BCELoss().to(self.device)
+        self.criterion = get_criterion(self.args.criterion_name, self.device)
+        self.evaluation_func = get_evaluation(self.args.evaluation_name)
 
     def train_val_test(self, dataset, idxs):
         """
@@ -51,27 +50,27 @@ class LocalUpdate(object):
         testloader = DataLoader(DatasetSplit(dataset, idxs_test),
                                 batch_size=self.args.local_bs, shuffle=False)
 
-        print(f'train dataset len: {len(idxs_train)}')
-        train_positive_num = {}
-        for i in range(self.args.task_num):
-            train_positive_num[i] = 0
-        for idx in idxs_train:
-            _, _, labels = dataset[idx]
-            for i in range(self.args.task_num):
-                train_positive_num[i] += labels[i]
-        for i in range(self.args.task_num):
-            print(f'task {i} train dataset positive num: {train_positive_num[i]}')
+        # print(f'train dataset len: {len(idxs_train)}')
+        # train_positive_num = {}
+        # for i in range(self.args.task_num):
+        #     train_positive_num[i] = 0
+        # for idx in idxs_train:
+        #     _, _, labels = dataset[idx]
+        #     for i in range(self.args.task_num):
+        #         train_positive_num[i] += labels[i]
+        # for i in range(self.args.task_num):
+            # print(f'task {i} train dataset positive num: {train_positive_num[i]}')
 
-        print(f'val dataset len: {len(idxs_test)}')
-        val_positive_num = {}
-        for i in range(self.args.task_num):
-            val_positive_num[i] = 0
-        for idx in idxs_val:
-            _, _, labels = dataset[idx]
-            for i in range(self.args.task_num):
-                val_positive_num[i] += labels[i]
-        for i in range(self.args.task_num):
-            print(f'task {i} val dataset positive num: {val_positive_num[i]}')
+        # print(f'val dataset len: {len(idxs_test)}')
+        # val_positive_num = {}
+        # for i in range(self.args.task_num):
+        #     val_positive_num[i] = 0
+        # for idx in idxs_val:
+        #     _, _, labels = dataset[idx]
+        #     for i in range(self.args.task_num):
+        #         val_positive_num[i] += labels[i]
+        # for i in range(self.args.task_num):
+            # print(f'task {i} val dataset positive num: {val_positive_num[i]}')
         return trainloader, validloader, testloader
 
     def update_weights(self, model, global_round):
@@ -98,7 +97,7 @@ class LocalUpdate(object):
                     self.device), labels.to(self.device)
 
                 y = model(categorical_fields, numerical_fields)
-                loss_list = [self.criterion(y[i], labels[:, i].float()) for i in range(labels.size(1))]
+                loss_list = [self.criterion[i](y[i], labels[:, i].float()) for i in range(labels.size(1))]
                 loss = 0
                 for item in loss_list:
                     loss += item
@@ -134,28 +133,29 @@ class LocalUpdate(object):
                         labels_dict[i].append(labels[:, i].tolist())
                         predicts_dict[i].append(y[i].tolist())
                         loss_dict[i].append(
-                            self.criterion(y[i], labels[:, i].float()).tolist())
+                            self.criterion[i](y[i].view(-1), labels[:, i].float()).tolist())
                     else:
                         labels_dict[i].extend(labels[:, i].tolist())
                         predicts_dict[i].extend(y[i].tolist())
                         loss_dict[i].append(
-                            self.criterion(y[i], labels[:, i].float()).tolist())
+                            self.criterion[i](y[i].view(-1), labels[:, i].float()).tolist())
 
-        auc_results, loss_results = list(), list()
+        evaluation_results, loss_results = list(), list()
         for i in range(self.args.task_num):
-            auc_results.append(roc_auc_score(labels_dict[i], predicts_dict[i]))
+            evaluation_results.append(self.evaluation_func[i](labels_dict[i], predicts_dict[i]))
             loss_results.append(np.array(loss_dict[i]).mean())
-        return auc_results, loss_results
+        return evaluation_results, loss_results
 
 
-def test_inference(args, model, test_dataset, user_groups):
+def test_inference(args, model, test_dataset):
     """ Returns the test accuracy and loss.
     """
 
     model.eval()
 
     device = torch.device(args.device)
-    criterion = nn.BCELoss().to(device)
+    criterion = get_criterion(args.criterion_name, device)
+    evaluation_func = get_evaluation(args.evaluation_name)
     testloader = DataLoader(test_dataset, batch_size=128, shuffle=False)
 
     labels_dict, predicts_dict, loss_dict = {}, {}, {}
@@ -174,15 +174,15 @@ def test_inference(args, model, test_dataset, user_groups):
                     labels_dict[i].append(labels[:, i].tolist())
                     predicts_dict[i].append(y[i].tolist())
                     loss_dict[i].append(
-                        criterion(y[i], labels[:, i].float()).tolist())
+                        criterion[i](y[i].view(-1), labels[:, i].float()).tolist())
                 else:
                     labels_dict[i].extend(labels[:, i].tolist())
                     predicts_dict[i].extend(y[i].tolist())
                     loss_dict[i].append(
-                        criterion(y[i], labels[:, i].float()).tolist())
+                        criterion[i](y[i].view(-1), labels[:, i].float()).tolist())
 
-    auc_results, loss_results = list(), list()
+    evaluation_results, loss_results = list(), list()
     for i in range(args.task_num):
-        auc_results.append(roc_auc_score(labels_dict[i], predicts_dict[i]))
+        evaluation_results.append(evaluation_func[i](labels_dict[i], predicts_dict[i]))
         loss_results.append(np.array(loss_dict[i]).mean())
-    return auc_results, loss_results
+    return evaluation_results, loss_results
