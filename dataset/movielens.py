@@ -5,7 +5,7 @@ import torch
 
 class MovieLensDataset(torch.utils.data.Dataset):
     def __init__(self, dataset_path, groups_num=0, task_num=1):
-        data_frame = pd.read_csv(dataset_path).head(10000)
+        data_frame = pd.read_csv(dataset_path)
         user_ids = data_frame.user_id.unique().tolist()
         self.user_groups = self.get_user_groups(data_frame, user_ids, groups_num)
         data = data_frame.to_numpy()[:, 0:]

@@ -50,27 +50,6 @@ class LocalUpdate(object):
         testloader = DataLoader(DatasetSplit(dataset, idxs_test),
                                 batch_size=self.args.local_bs, shuffle=False)
 
-        # print(f'train dataset len: {len(idxs_train)}')
-        train_positive_num = {}
-        for i in range(self.args.task_num):
-            train_positive_num[i] = 0
-        for idx in idxs_train:
-            _, _, labels = dataset[idx]
-            for i in range(self.args.task_num):
-                train_positive_num[i] += labels[i]
-        for i in range(self.args.task_num):
-            # print(f'task {i} train dataset positive num: {train_positive_num[i]}')
-
-        # print(f'val dataset len: {len(idxs_test)}')
-        val_positive_num = {}
-        for i in range(self.args.task_num):
-            val_positive_num[i] = 0
-        for idx in idxs_val:
-            _, _, labels = dataset[idx]
-            for i in range(self.args.task_num):
-                val_positive_num[i] += labels[i]
-        for i in range(self.args.task_num):
-            # print(f'task {i} val dataset positive num: {val_positive_num[i]}')
         return trainloader, validloader, testloader
 
     def update_weights(self, model, global_round):
