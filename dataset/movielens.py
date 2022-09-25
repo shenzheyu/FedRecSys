@@ -4,14 +4,19 @@ import torch
 
 
 class MovieLensDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_path, groups_num=0):
+    def __init__(self, dataset_path, groups_num=0, task_num=1):
         data_frame = pd.read_csv(dataset_path).head(10000)
         user_ids = data_frame.user_id.unique().tolist()
         self.user_groups = self.get_user_groups(data_frame, user_ids, groups_num)
         data = data_frame.to_numpy()[:, 0:]
         self.categorical_data = data[:, :24].astype(np.int)
-        self.numerical_data = data[:, 24: -1].astype(np.float32)
-        self.labels = np.expand_dims(data[:, -1].astype(np.float32), axis=1) / 5
+        self.numerical_data = data[:, 24: -2].astype(np.float32)
+        if task_num == 1:
+            self.labels = np.expand_dims(data[:, -1].astype(np.float32), axis=1)
+        elif task_num == 2:
+            self.labels = np.expand_dims(data[:, -2:].astype(np.float32), axis=1)
+        else:
+            raise ValueError(f"Unknown task num {task_num}")
         self.numerical_num = self.numerical_data.shape[1]
         self.field_dims = np.max(self.categorical_data, axis=0) + 1
 

@@ -18,7 +18,7 @@ class DLRMModel(torch.nn.Module):
         self.interaction_output_dim = self.catgorical_out_dim + bottom_mlp_dims[-1]
 
         self.bottom_mlp = MultiLayerPerceptron(numerical_num, bottom_mlp_dims, dropout, output_layer=False)
-        self.top_mlp = MultiLayerPerceptron(self.interaction_output_dim, up_mlp_dims, dropout, output_layer=True)
+        self.top_mlp = MultiLayerPerceptron(self.interaction_output_dim, up_mlp_dims, dropout, output_layer=True, need_sigmoid=True)
 
     def forward(self, categorical_x, numerical_x):
         """

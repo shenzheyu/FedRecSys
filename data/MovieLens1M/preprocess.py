@@ -46,11 +46,20 @@ df_data = df_data.join(dummies.add_prefix('genres_'))
 category_cols = ['user_id', 'movie_id', 'gender', 'age', 'occupation', 'zip_code']
 category_cols.extend(['genres_' + x for x in genres])
 numerical_cols = ['timestamp', 'year']
-label_col = 'rating'
+label_cols = ['rating', 'click']
+
+click_list = []
+for rating in df_data['rating']:
+    if rating == 5:
+        click_list.append([1])
+    else:
+        click_list.append([0])
+df_click = pd.DataFrame(np.array(click_list), columns=['click'])
+df_data = pd.concat([df_data, df_click], axis=1)
 
 df_category_data = df_data[category_cols]
 df_numerical_data = df_data[numerical_cols]
-df_label_data = df_data[label_col]
+df_label_data = df_data[label_cols]
 
 new_category_cols = ['user_id'] + ['movie_id'] + ['categorical_{}'.format(i) for i in range(2, len(category_cols))]
 df_category_data.columns = new_category_cols

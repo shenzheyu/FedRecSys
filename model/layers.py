@@ -18,7 +18,7 @@ class EmbeddingLayer(torch.nn.Module):
 
 class MultiLayerPerceptron(torch.nn.Module):
 
-    def __init__(self, input_dim, embed_dims, dropout, output_layer=True):
+    def __init__(self, input_dim, embed_dims, dropout, output_layer=True, need_sigmoid=False):
         super().__init__()
         layers = list()
         for embed_dim in embed_dims:
@@ -29,6 +29,7 @@ class MultiLayerPerceptron(torch.nn.Module):
             input_dim = embed_dim
         if output_layer:
             layers.append(torch.nn.Linear(input_dim, 1))
+            layers.append(torch.nn.Sigmoid())
         self.mlp = torch.nn.Sequential(*layers)
 
     def forward(self, x):
