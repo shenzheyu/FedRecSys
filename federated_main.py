@@ -47,8 +47,13 @@ if __name__ == '__main__':
     train_loss, train_accuracy = [], []
     print_every = 5
 
+    local_models = []
+    for idx in user_groups.keys():
+        local_models.append(LocalUpdate(args=args, dataset=dataset, idxs=user_groups[idx], field_dims=field_dims,
+                                        global_model=global_model, logger=logger))
+
     for epoch in tqdm(range(args.epoch)):
-        local_weights, local_losses = [], []
+        local_weights, local_embedding_maps, local_losses = [], [], []
         print(f'\n | Global Training Round : {epoch + 1} |\n')
 
         global_model.train()
@@ -56,24 +61,25 @@ if __name__ == '__main__':
         idxs_users = np.random.choice(list(user_groups.keys()), m, replace=False)
 
         for idx in idxs_users:
-            local_model = LocalUpdate(args=args, dataset=dataset,
-                                      idxs=user_groups[idx], logger=logger)
-            w, loss = local_model.update_weights(
-                model=copy.deepcopy(global_model).to(device), global_round=epoch)
+            local_models[idx].fetch_embedding(global_model, False, lambda x: x > field_dims[0])
+            local_models[idx].fetch_weights(global_model)
+            w, loss = local_models[idx].update_weights()
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
+            local_embedding_maps.append(copy.deepcopy(local_models[idx].embedding_map))
 
-        # average embedding weight
-        embedding_weight = average_embeddings(local_weights, global_weights, args.embedding_name)
+        # average embedding weight except user_id embedding
+        embedding_weight = average_embeddings(local_weights, local_embedding_maps, global_weights,
+                                              args.embedding_name, lambda x: x > field_dims[0])
 
         # average global weights
-        global_weights = average_weights(local_weights, args.embedding_name)
-
-        # update global embedding weight
-        global_model.state_dict()[args.embedding_name] = copy.deepcopy(embedding_weight)
+        global_weights = average_weights(local_weights, global_weights, args.embedding_name)
 
         # update global weights
         global_model.load_state_dict(global_weights)
+
+        # update global embedding weight
+        global_model.embedding.update_embedding(copy.deepcopy(embedding_weight))
 
         loss_avg = sum(local_losses) / len(local_losses)
         train_loss.append(loss_avg)
@@ -82,38 +88,38 @@ if __name__ == '__main__':
         list_eva, list_loss = [], []
         global_model.eval()
         for c in range(user_num):
-            local_model = LocalUpdate(args=args, dataset=dataset,
-                                      idxs=user_groups[c], logger=logger)
-            eva, loss = local_model.inference(model=global_model)
+            local_models[c].fetch_embedding(global_model, False, lambda x: x > field_dims[0])
+            local_models[c].fetch_weights(global_model)
+            eva, loss = local_models[c].inference()
             list_eva.append(eva)
             list_loss.append(loss)
         train_evaluation = np.sum(list_eva, axis=0) / len(list_eva)
 
         # print global training loss after every 'i' rounds
-        if epoch % print_every == 0:
+        if (epoch + 1) % print_every == 0:
             print(f' \nAvg Training Stats after {epoch} global rounds:')
             print(f'Training Loss : {np.mean(np.array(train_loss))}')
             for i in range(args.task_num):
                 print(f'Train {args.evaluation_name[i]} for task {i}: {train_evaluation[i]} \n')
 
     # Test inference after completion of training
-    test_idxs = []
-    for idxs in user_groups.values():
-        test_idxs.extend(idxs[int(0.8 * len(idxs)):])
+    local_weights, local_embedding_maps, test_idxs = [], [], []
+    for user_id, idxs in user_groups.items():
+        test_idxs.extend(local_models[user_id].idxs_test)
+        local_weights.append(local_models[user_id].model.state_dict())
+        local_embedding_maps.append(local_models[user_id].embedding_map)
+
+    # merge user_id embedding into global model
+    embedding_weight = average_embeddings(local_weights, local_embedding_maps, global_weights,
+                                          args.embedding_name, lambda x: x < field_dims[0])
+    global_model.embedding.update_embedding(copy.deepcopy(embedding_weight))
+
     test_eva, test_loss = test_inference(args, global_model, DatasetSplit(dataset, test_idxs))
 
     print(f' \n Results after {args.epoch} global rounds of training:')
     for i in range(args.task_num):
         print(f'|---- Avg Train {args.evaluation_name[i]} for task {i}: {train_evaluation[i]}')
         print(f'|---- Test {args.evaluation_name[i]} for task {i}: {test_eva[i]}')
-
-    # Saving the objects train_loss and train_accuracy:
-    file_name = '../save/objects/{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].pkl'. \
-        format(args.dataset, args.model, args.epochs, args.frac, args.iid,
-               args.local_ep, args.local_bs)
-
-    with open(file_name, 'wb') as f:
-        pickle.dump([train_loss, train_accuracy], f)
 
     print('\n Total Run Time: {0:0.4f}'.format(time.time() - start_time))
 

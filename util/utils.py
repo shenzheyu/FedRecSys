@@ -1,5 +1,6 @@
 import copy
 
+import numpy as np
 import torch
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import roc_auc_score
@@ -61,43 +62,57 @@ def get_evaluation(name):
     return evaluation
 
 
-def average_weights(w, embedding_name):
+def get_embedding_map(dataset, idxs, field_dims):
+    embedding_map = {}
+    global_offset = np.array((0, *np.cumsum(field_dims)[:-1]), dtype=np.long)
+    embedding_idx = 0
+    for idx in idxs:
+        categorical_fields, _, _ = dataset[idx]
+        for i in range(len(field_dims)):
+            if categorical_fields[i] + global_offset[i] not in embedding_map.keys():
+                embedding_map[categorical_fields[i] + global_offset[i]] = embedding_idx
+                embedding_idx += 1
+    return embedding_map
+
+
+def average_weights(w, global_weight, embedding_name):
     """
     Returns the average of the weights.
     """
-    w_avg = copy.deepcopy(w[0])
+    w_avg = copy.deepcopy(global_weight)
     for key in w_avg.keys():
         if key == embedding_name:
             continue
+        w_avg[key] = w[0][key]
         for i in range(1, len(w)):
             w_avg[key] += w[i][key]
         w_avg[key] = torch.div(w_avg[key], len(w))
     return w_avg
 
 
-def average_embeddings(w, global_weight, embedding_name):
+def average_embeddings(local_weights, local_embedding_maps, global_weight, embedding_name,
+                       update_condition=lambda x: True):
     global_embedding_weight = global_weight[embedding_name]
     average_embedding_weight = copy.deepcopy(global_embedding_weight)
     word_num = global_embedding_weight.size()[0]
-    embedding_dict = {}
+    embedding_map = {}
     for word in range(word_num):
-        embedding_dict[word] = []
+        embedding_map[word] = []
 
-    for i in range(len(w)):
-        local_embedding_weight = w[i][embedding_name]
-        for word in range(word_num):
-            if local_embedding_weight[word].equal(global_embedding_weight[word]):
-                continue
-            embedding_dict[word].append(local_embedding_weight[word])
+    for idx in range(len(local_weights)):
+        for global_word, word in local_embedding_maps[idx].items():
+            # not average embedding for user_id
+            if update_condition(global_word):
+                embedding_map[global_word].append(local_weights[idx][embedding_name][word])
 
     for word in range(word_num):
-        if len(embedding_dict[word]) == 0:
+        if len(embedding_map[word]) == 0:
             average_embedding_weight[word] = global_embedding_weight[word]
         else:
-            average_embedding_weight[word] = embedding_dict[word][0]
-            for i in range(1, len(embedding_dict[word])):
-                average_embedding_weight[word] += embedding_dict[word][i]
-            average_embedding_weight[word] = torch.div(average_embedding_weight[word], len(embedding_dict[word]))
+            average_embedding_weight[word] = embedding_map[word][0]
+            for i in range(1, len(embedding_map[word])):
+                average_embedding_weight[word] += embedding_map[word][i]
+            average_embedding_weight[word] = torch.div(average_embedding_weight[word], len(embedding_map[word]))
 
     return average_embedding_weight
 
