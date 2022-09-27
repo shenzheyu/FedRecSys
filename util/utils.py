@@ -9,6 +9,7 @@ from dataset.aliexpress import AliExpressDataset
 from dataset.movielens import MovieLensDataset
 from model.dlrm import DLRMModel
 from model.mmoe_v2 import MMoEModel
+from model.wdl import WDLModel
 
 
 def get_dataset(name, path, groups_num):
@@ -27,13 +28,17 @@ def get_model(name, categorical_field_dims, numerical_num, task_num, expert_num,
     Hyperparameters are empirically determined, not opitmized.
     """
     if name == 'mmoe':
-        print("Model: MMoE")
+        print('Model: MMoE')
         return MMoEModel(categorical_field_dims, numerical_num, embed_dim=embed_dim, bottom_mlp_dims=(512, 256),
                          tower_mlp_dims=(128, 64), task_num=task_num, expert_num=expert_num, dropout=0.2)
-    if name == "dlrm":
-        print("Model: DLRM")
+    elif name == 'dlrm':
+        print('Model: DLRM')
         return DLRMModel(categorical_field_dims, numerical_num, embed_dim=embed_dim, bottom_mlp_dims=(32, 16),
                          up_mlp_dims=(256, 128, 64), dropout=0.2)
+    elif name == 'wdl':
+        print('Model: Wide&Deep')
+        return WDLModel(categorical_field_dims, numerical_num, embed_dim=embed_dim, deep_mlp_dims=(1024, 512, 256),
+                        dropout=0.2)
     else:
         raise ValueError('unknown model name: ' + name)
 
