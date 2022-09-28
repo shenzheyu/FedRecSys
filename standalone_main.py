@@ -12,6 +12,7 @@ from dataset.movielens import MovieLensDataset
 from model.dlrm import DLRMModel
 from model.mmoe_v2 import MMoEModel
 from model.wdl import WDLModel
+from model.lr import LinearRegression
 from util.options import args_parser
 from util.utils import count_parameters
 
@@ -42,6 +43,9 @@ def get_model(name, categorical_field_dims, numerical_num, task_num, expert_num,
         print('Model: Wide&Deep')
         return WDLModel(categorical_field_dims, numerical_num, embed_dim=embed_dim, deep_mlp_dims=(1024, 512, 256),
                         dropout=0.2)
+    elif name == 'lr':
+        print('Model: LinearRegression')
+        return LinearRegression(categorical_field_dims, numerical_num)
     else:
         raise ValueError('unknown model name: ' + name)
 

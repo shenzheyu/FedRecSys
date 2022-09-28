@@ -24,7 +24,7 @@ def args_parser():
     parser.add_argument('--dataset_name', default='AliExpress_NL',
                         choices=['AliExpress_NL', 'AliExpress_ES', 'AliExpress_FR', 'AliExpress_US', 'MovieLens1M'])
     parser.add_argument('--dataset_path', default='./data/')
-    parser.add_argument('--model_name', default='mmoe', choices=['mmoe', 'dlrm'])
+    parser.add_argument('--model_name', default='mmoe', choices=['mmoe', 'dlrm', 'wdl', 'lr'])
     parser.add_argument('--task_num', type=int, default=2)
     parser.add_argument('--expert_num', type=int, default=8)
     parser.add_argument('--learning_rate', type=float, default=0.001)
