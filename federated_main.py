@@ -61,8 +61,9 @@ if __name__ == '__main__':
         idxs_users = np.random.choice(list(user_groups.keys()), m, replace=False)
 
         for idx in idxs_users:
-            local_models[idx].fetch_embedding(global_model, False, lambda x: x > field_dims[0])
-            local_models[idx].fetch_weights(global_model)
+            # TODO: in distributed computing, we need to pull personalized embedding for each client
+            local_models[idx].fetch_embedding(global_model, False, lambda x: x > field_dims[0])  # pull embedding layer
+            local_models[idx].fetch_weights(global_model)  # pull other layers
             w, loss = local_models[idx].update_weights()
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
@@ -72,7 +73,7 @@ if __name__ == '__main__':
         embedding_weight = average_embeddings(local_weights, local_embedding_maps, global_weights,
                                               args.embedding_name, lambda x: x > field_dims[0])
 
-        # average global weights
+        # average global weights (do not consider the embedding layer)
         global_weights = average_weights(local_weights, global_weights, args.embedding_name)
 
         # update global weights

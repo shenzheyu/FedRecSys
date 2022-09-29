@@ -39,6 +39,7 @@ class LocalUpdate(object):
         self.model = copy.deepcopy(global_model)
         self.model = self.model.to(self.device)
         self.model.embedding.update_offsets(None)
+        # change the embedding tensor to personalized shape according to self.embedding_map
         self.fetch_embedding(global_model, True)
 
     def train_val_test(self, dataset, idxs):

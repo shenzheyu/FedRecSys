@@ -13,57 +13,72 @@ from model.wdl import WDLModel
 
 
 def get_dataset(name, path, groups_num):
-    if 'AliExpress' in name:
+    if "AliExpress" in name:
         dataset = AliExpressDataset(path, groups_num)
         return dataset, dataset.user_groups
-    elif 'MovieLens' in name:
+    elif "MovieLens" in name:
         dataset = MovieLensDataset(path, groups_num)
         return dataset, dataset.user_groups
     else:
-        raise ValueError('unknown dataset name: ' + name)
+        raise ValueError("unknown dataset name: " + name)
 
 
 def get_model(name, categorical_field_dims, numerical_num, task_num, expert_num, embed_dim):
     """
     Hyperparameters are empirically determined, not opitmized.
     """
-    if name == 'mmoe':
-        print('Model: MMoE')
-        return MMoEModel(categorical_field_dims, numerical_num, embed_dim=embed_dim, bottom_mlp_dims=(512, 256),
-                         tower_mlp_dims=(128, 64), task_num=task_num, expert_num=expert_num, dropout=0.2)
-    elif name == 'dlrm':
-        print('Model: DLRM')
-        return DLRMModel(categorical_field_dims, numerical_num, embed_dim=embed_dim, bottom_mlp_dims=(32, 16),
-                         up_mlp_dims=(256, 128, 64), dropout=0.2)
-    elif name == 'wdl':
-        print('Model: Wide&Deep')
-        return WDLModel(categorical_field_dims, numerical_num, embed_dim=embed_dim, deep_mlp_dims=(1024, 512, 256),
-                        dropout=0.2)
+    if name == "mmoe":
+        print("Model: MMoE")
+        return MMoEModel(
+            categorical_field_dims,
+            numerical_num,
+            embed_dim=embed_dim,
+            bottom_mlp_dims=(512, 256),
+            tower_mlp_dims=(128, 64),
+            task_num=task_num,
+            expert_num=expert_num,
+            dropout=0.2,
+        )
+    elif name == "dlrm":
+        print("Model: DLRM")
+        return DLRMModel(
+            categorical_field_dims,
+            numerical_num,
+            embed_dim=embed_dim,
+            bottom_mlp_dims=(32, 16),
+            up_mlp_dims=(256, 128, 64),
+            dropout=0.2,
+        )
+    elif name == "wdl":
+        print("Model: Wide&Deep")
+        return WDLModel(
+            categorical_field_dims, numerical_num, embed_dim=embed_dim, deep_mlp_dims=(1024, 512, 256), dropout=0.2
+        )
     else:
-        raise ValueError('unknown model name: ' + name)
+        raise ValueError("unknown model name: " + name)
 
 
 def get_criterion(name, device):
     criterion = []
-    for n in name.split(','):
-        if n == 'bce':
+    for n in name.split(","):
+        if n == "bce":
             criterion.append(torch.nn.BCELoss().to(device))
-        elif n == 'mse':
-            criterion.append(torch.nn.MSELoss(reduction='mean').to(device))
+        elif n == "mse":
+            criterion.append(torch.nn.MSELoss(reduction="mean").to(device))
         else:
-            raise ValueError('unknown criterion name: ' + n)
+            raise ValueError("unknown criterion name: " + n)
     return criterion
 
 
 def get_evaluation(name):
     evaluation = []
-    for n in name.split(','):
-        if n == 'auc':
+    for n in name.split(","):
+        if n == "auc":
             evaluation.append(roc_auc_score)
-        elif n == 'rmse':
+        elif n == "rmse":
             evaluation.append(lambda y, y_hat: mean_squared_error(y, y_hat, squared=False))
         else:
-            raise ValueError('unknown evaluation name: ' + n)
+            raise ValueError("unknown evaluation name: " + n)
     return evaluation
 
 
@@ -77,7 +92,7 @@ def get_embedding_map(dataset, idxs, field_dims):
             if categorical_fields[i] + global_offset[i] not in embedding_map.keys():
                 embedding_map[categorical_fields[i] + global_offset[i]] = embedding_idx
                 embedding_idx += 1
-    return embedding_map
+    return embedding_map  # (global_embedding_index, local_embedding_idx)
 
 
 def average_weights(w, global_weight, embedding_name):
@@ -91,48 +106,52 @@ def average_weights(w, global_weight, embedding_name):
         w_avg[key] = w[0][key]
         for i in range(1, len(w)):
             w_avg[key] += w[i][key]
-        w_avg[key] = torch.div(w_avg[key], len(w))
+        w_avg[key] = torch.div(w_avg[key], len(w))  # TODO: we should follow FedAvg algorithm
     return w_avg
 
 
-def average_embeddings(local_weights, local_embedding_maps, global_weight, embedding_name,
-                       update_condition=lambda x: True):
+def average_embeddings(
+    local_weights, local_embedding_maps, global_weight, embedding_name, update_condition=lambda x: True
+):
     global_embedding_weight = global_weight[embedding_name]
     average_embedding_weight = copy.deepcopy(global_embedding_weight)
     word_num = global_embedding_weight.size()[0]
-    embedding_map = {}
+    global_embedding_map = {}
     for word in range(word_num):
-        embedding_map[word] = []
+        global_embedding_map[word] = []
 
     for idx in range(len(local_weights)):
-        for global_word, word in local_embedding_maps[idx].items():
+        # local_embedding_maps = (global_embedding_index, local_embedding_idx)
+        for global_word_idx, local_word_idx in local_embedding_maps[idx].items():
             # not average embedding for user_id
-            if update_condition(global_word):
-                embedding_map[global_word].append(local_weights[idx][embedding_name][word])
+            if update_condition(global_word_idx):
+                global_embedding_map[global_word_idx].append(local_weights[idx][embedding_name][local_word_idx])
 
-    for word in range(word_num):
-        if len(embedding_map[word]) == 0:
-            average_embedding_weight[word] = global_embedding_weight[word]
-        else:
-            average_embedding_weight[word] = embedding_map[word][0]
-            for i in range(1, len(embedding_map[word])):
-                average_embedding_weight[word] += embedding_map[word][i]
-            average_embedding_weight[word] = torch.div(average_embedding_weight[word], len(embedding_map[word]))
+    for global_word_idx in range(word_num):
+        if len(global_embedding_map[global_word_idx]) != 0:
+            average_embedding_weight[global_word_idx] = global_embedding_map[global_word_idx][0]  # [128]
+            for i in range(1, len(global_embedding_map[global_word_idx])):
+                average_embedding_weight[global_word_idx] += global_embedding_map[global_word_idx][i]
+            # TODO: change it sample number-based weighted averaging (FedAvg); how about FedNova and FedOpt?
+            # https://www.diva-portal.org/smash/get/diva2:1553472/FULLTEXT01.pdf
+            average_embedding_weight[global_word_idx] = torch.div(
+                average_embedding_weight[global_word_idx], len(global_embedding_map[global_word_idx])
+            )
 
     return average_embedding_weight
 
 
 def exp_details(args):
-    print('\nExperimental details:')
-    print(f'    Model     : {args.model}')
-    print(f'    Optimizer : {args.optimizer}')
-    print(f'    Learning  : {args.lr}')
-    print(f'    Global Rounds   : {args.epochs}\n')
+    print("\nExperimental details:")
+    print(f"    Model     : {args.model}")
+    print(f"    Optimizer : {args.optimizer}")
+    print(f"    Learning  : {args.lr}")
+    print(f"    Global Rounds   : {args.epochs}\n")
 
-    print('    Federated parameters:')
-    print(f'    Fraction of users  : {args.frac}')
-    print(f'    Local Batch size   : {args.local_bs}')
-    print(f'    Local Epochs       : {args.local_ep}\n')
+    print("    Federated parameters:")
+    print(f"    Fraction of users  : {args.frac}")
+    print(f"    Local Batch size   : {args.local_bs}")
+    print(f"    Local Epochs       : {args.local_ep}\n")
     return
 
 
