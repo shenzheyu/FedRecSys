@@ -26,6 +26,9 @@ class MovieLensDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         return self.categorical_data[index], self.numerical_data[index], self.labels[index]
 
+    def update_categorical_data(self, index, value):
+        self.categorical_data[index] = value
+
     def get_user_groups(self, data_frame, user_ids, groups_num=0):
         user_groups = {}
         for user_id in user_ids:

@@ -29,14 +29,15 @@ class LocalUpdate(object):
     def __init__(self, args, dataset, idxs, field_dims, global_model, logger):
         self.args = args
         self.logger = logger
+        self.field_dims = field_dims
+        self.embedding_map = get_embedding_map(dataset, idxs, self.field_dims)
         self.trainloader, self.validloader, self.testloader, self.idxs_test = self.train_val_test(
             dataset, list(idxs))
         self.device = torch.device(args.device)
         self.criterion = get_criterion(self.args.criterion_name, self.device)
         self.evaluation_func = get_evaluation(self.args.evaluation_name)
         self.model = copy.deepcopy(global_model)
-        self.embedding_map = get_embedding_map(dataset, idxs, field_dims)
-        self.model.embedding.update_embedding_map(self.embedding_map)
+        self.model.embedding.update_offsets(None)
         self.fetch_embedding(global_model, True)
 
     def train_val_test(self, dataset, idxs):
@@ -50,6 +51,10 @@ class LocalUpdate(object):
         idxs_val = idxs[int(0.8 * len(idxs)): int(0.9 * len(idxs))]
         idxs_test = idxs[int(0.9 * len(idxs)):]
 
+        # map train, validation set by embedding map
+        self.data2local(dataset, idxs_train)
+        self.data2local(dataset, idxs_val)
+
         trainloader = DataLoader(DatasetSplit(dataset, idxs_train),
                                  batch_size=self.args.local_bs, shuffle=True)
         validloader = DataLoader(DatasetSplit(dataset, idxs_val),
@@ -58,6 +63,12 @@ class LocalUpdate(object):
                                 batch_size=self.args.local_bs, shuffle=False)
 
         return trainloader, validloader, testloader, idxs_test
+
+    def data2local(self, dataset, idxs):
+        global_offsets = np.array((0, *np.cumsum(self.field_dims)[:-1]), dtype=np.long)
+        for idx in idxs:
+            map_function = lambda x: self.embedding_map[x]
+            dataset.update_categorical_data(idx, np.vectorize(map_function)(dataset[idx][0] + global_offsets))
 
     def fetch_embedding(self, global_model, new_embedding=False, word_condition=lambda x: True):
         global_embedding = global_model.state_dict()[self.args.embedding_name]
