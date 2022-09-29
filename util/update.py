@@ -37,6 +37,7 @@ class LocalUpdate(object):
         self.criterion = get_criterion(self.args.criterion_name, self.device)
         self.evaluation_func = get_evaluation(self.args.evaluation_name)
         self.model = copy.deepcopy(global_model)
+        self.model = self.model.to(self.device)
         self.model.embedding.update_offsets(None)
         self.fetch_embedding(global_model, True)
 
@@ -91,6 +92,7 @@ class LocalUpdate(object):
     def update_weights(self):
         # Set mode to train model
         self.model.train()
+        self.model = self.model.to(self.device)
         epoch_loss = []
 
         # Set optimizer for the local updates
@@ -130,6 +132,7 @@ class LocalUpdate(object):
         """
 
         self.model.eval()
+        self.model = self.model.to(self.device)
         labels_dict, predicts_dict, loss_dict = {}, {}, {}
         for i in range(self.args.task_num):
             labels_dict[i], predicts_dict[i], loss_dict[i] = list(), list(), list()
