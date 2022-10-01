@@ -53,28 +53,30 @@ if __name__ == '__main__':
                                         global_model=global_model, logger=logger))
 
     for epoch in tqdm(range(args.epoch)):
-        local_weights, local_embedding_maps, local_losses = [], [], []
-        print(f'\n | Global Training Round : {epoch + 1} |\n')
+        local_weights, local_embedding_maps, local_update_times, local_train_nums, local_losses = [], [], [], [], []
+        print(f'\n | Global Training Round : {epoch} |\n')
 
         global_model.train()
         m = max(int(args.frac * user_num), 1)
-        idxs_users = np.random.choice(list(user_groups.keys()), m, replace=False)
+        idxs_client = np.random.choice(list(user_groups.keys()), m, replace=False)
 
-        for idx in idxs_users:
+        for idx in idxs_client:
             # TODO: in distributed computing, we need to pull personalized embedding for each client
             local_models[idx].fetch_embedding(global_model, False, lambda x: x > field_dims[0])  # pull embedding layer
             local_models[idx].fetch_weights(global_model)  # pull other layers
             w, loss = local_models[idx].update_weights()
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
+            local_update_times.append(copy.deepcopy(local_models[idx].update_times))
+            local_train_nums.append(len(local_models[idx].idxs_train))
             local_embedding_maps.append(copy.deepcopy(local_models[idx].embedding_map))
 
         # average embedding weight except user_id embedding
-        embedding_weight = average_embeddings(local_weights, local_embedding_maps, global_weights,
+        embedding_weight = average_embeddings(local_weights, local_embedding_maps, local_update_times, global_weights,
                                               args.embedding_name, lambda x: x > field_dims[0])
 
         # average global weights (do not consider the embedding layer)
-        global_weights = average_weights(local_weights, global_weights, args.embedding_name)
+        global_weights = average_weights(local_weights, local_train_nums, global_weights, args.embedding_name)
 
         # update global weights
         global_model.load_state_dict(global_weights)
@@ -104,14 +106,15 @@ if __name__ == '__main__':
                 print(f'Train {args.evaluation_name[i]} for task {i}: {train_evaluation[i]} \n')
 
     # Test inference after completion of training
-    local_weights, local_embedding_maps, test_idxs = [], [], []
+    local_weights, local_embedding_maps, local_update_times, test_idxs = [], [], [], []
     for user_id, idxs in user_groups.items():
         test_idxs.extend(local_models[user_id].idxs_test)
         local_weights.append(local_models[user_id].model.state_dict())
         local_embedding_maps.append(local_models[user_id].embedding_map)
+        local_update_times.append(copy.deepcopy(local_models[user_id].update_times))
 
     # merge user_id embedding into global model
-    embedding_weight = average_embeddings(local_weights, local_embedding_maps, global_weights,
+    embedding_weight = average_embeddings(local_weights, local_embedding_maps, local_update_times, global_weights,
                                           args.embedding_name, lambda x: x < field_dims[0])
     global_model.embedding.update_embedding(copy.deepcopy(embedding_weight))
 

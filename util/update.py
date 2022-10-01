@@ -6,7 +6,6 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 from util.utils import get_criterion
-from util.utils import get_embedding_map
 from util.utils import get_evaluation
 
 
@@ -30,9 +29,10 @@ class LocalUpdate(object):
         self.args = args
         self.logger = logger
         self.field_dims = field_dims
-        self.embedding_map = get_embedding_map(dataset, idxs, self.field_dims)
-        self.trainloader, self.validloader, self.testloader, self.idxs_test = self.train_val_test(
+        self.embedding_map = self.get_embedding_map(dataset, idxs)
+        self.trainloader, self.validloader, self.testloader, self.idxs_train, self.idxs_test = self.train_val_test(
             dataset, list(idxs))
+        self.update_times = self.get_update_times(dataset)
         self.device = torch.device(args.device)
         self.criterion = get_criterion(self.args.criterion_name, self.device)
         self.evaluation_func = get_evaluation(self.args.evaluation_name)
@@ -64,7 +64,30 @@ class LocalUpdate(object):
         testloader = DataLoader(DatasetSplit(dataset, idxs_test),
                                 batch_size=self.args.local_bs, shuffle=False)
 
-        return trainloader, validloader, testloader, idxs_test
+        return trainloader, validloader, testloader, idxs_train, idxs_test
+
+    def get_embedding_map(self, dataset, idxs):
+        embedding_map = {}
+        global_offset = np.array((0, *np.cumsum(self.field_dims)[:-1]), dtype=np.long)
+        embedding_idx = 0
+        for idx in idxs:
+            categorical_fields, _, _ = dataset[idx]
+            for i in range(len(self.field_dims)):
+                if categorical_fields[i] + global_offset[i] not in embedding_map.keys():
+                    embedding_map[categorical_fields[i] + global_offset[i]] = embedding_idx
+                    embedding_idx += 1
+        return embedding_map  # (global_embedding_index, local_embedding_idx)
+
+    def get_update_times(self, dataset):
+        update_times = {}  # {local_word -> update_times}
+        for idx in self.idxs_train:
+            categorical_fields, _, _ = dataset[idx]
+            for i in range(len(self.field_dims)):
+                if categorical_fields[i] in update_times.keys():
+                    update_times[categorical_fields[i]] += 1
+                else:
+                    update_times[categorical_fields[i]] = 1
+        return update_times
 
     def data2local(self, dataset, idxs):
         global_offsets = np.array((0, *np.cumsum(self.field_dims)[:-1]), dtype=np.long)

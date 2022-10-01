@@ -1,6 +1,5 @@
 import copy
 
-import numpy as np
 import torch
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import roc_auc_score
@@ -82,20 +81,7 @@ def get_evaluation(name):
     return evaluation
 
 
-def get_embedding_map(dataset, idxs, field_dims):
-    embedding_map = {}
-    global_offset = np.array((0, *np.cumsum(field_dims)[:-1]), dtype=np.long)
-    embedding_idx = 0
-    for idx in idxs:
-        categorical_fields, _, _ = dataset[idx]
-        for i in range(len(field_dims)):
-            if categorical_fields[i] + global_offset[i] not in embedding_map.keys():
-                embedding_map[categorical_fields[i] + global_offset[i]] = embedding_idx
-                embedding_idx += 1
-    return embedding_map  # (global_embedding_index, local_embedding_idx)
-
-
-def average_weights(w, global_weight, embedding_name):
+def average_weights(w, local_train_num, global_weight, embedding_name):
     """
     Returns the average of the weights.
     """
@@ -105,37 +91,42 @@ def average_weights(w, global_weight, embedding_name):
             continue
         w_avg[key] = w[0][key]
         for i in range(1, len(w)):
-            w_avg[key] += w[i][key]
-        w_avg[key] = torch.div(w_avg[key], len(w))  # TODO: we should follow FedAvg algorithm
+            w_avg[key] += w[i][key] * local_train_num[i]
+        w_avg[key] = torch.div(w_avg[key], sum(local_train_num))
     return w_avg
 
 
 def average_embeddings(
-    local_weights, local_embedding_maps, global_weight, embedding_name, update_condition=lambda x: True
+        local_weights, local_embedding_maps, local_update_times, global_weight, embedding_name,
+        update_condition=lambda x: True
 ):
     global_embedding_weight = global_weight[embedding_name]
     average_embedding_weight = copy.deepcopy(global_embedding_weight)
     word_num = global_embedding_weight.size()[0]
     global_embedding_map = {}
+    global_update_times = {}
     for word in range(word_num):
         global_embedding_map[word] = []
+        global_update_times[word] = 0
 
     for idx in range(len(local_weights)):
-        # local_embedding_maps = (global_embedding_index, local_embedding_idx)
-        for global_word_idx, local_word_idx in local_embedding_maps[idx].items():
-            # not average embedding for user_id
-            if update_condition(global_word_idx):
-                global_embedding_map[global_word_idx].append(local_weights[idx][embedding_name][local_word_idx])
+        # local_embedding_maps = (global_embedding_word, local_embedding_word)
+        for global_embedding_word, local_embedding_word in local_embedding_maps[idx].items():
+            # average controlled by update_condition
+            if update_condition(global_embedding_word) and local_embedding_word in local_update_times[idx].keys():
+                global_embedding_map[global_embedding_word].append(
+                    local_weights[idx][embedding_name][local_embedding_word] * local_update_times[idx][local_embedding_word])
+                global_update_times[global_embedding_word] += local_update_times[idx][local_embedding_word]
 
-    for global_word_idx in range(word_num):
-        if len(global_embedding_map[global_word_idx]) != 0:
-            average_embedding_weight[global_word_idx] = global_embedding_map[global_word_idx][0]  # [128]
-            for i in range(1, len(global_embedding_map[global_word_idx])):
-                average_embedding_weight[global_word_idx] += global_embedding_map[global_word_idx][i]
+    for global_embedding_word in range(word_num):
+        if len(global_embedding_map[global_embedding_word]) != 0:
+            average_embedding_weight[global_embedding_word] = global_embedding_map[global_embedding_word][0]  # [128]
+            for i in range(1, len(global_embedding_map[global_embedding_word])):
+                average_embedding_weight[global_embedding_word] += global_embedding_map[global_embedding_word][i]
             # TODO: change it sample number-based weighted averaging (FedAvg); how about FedNova and FedOpt?
             # https://www.diva-portal.org/smash/get/diva2:1553472/FULLTEXT01.pdf
-            average_embedding_weight[global_word_idx] = torch.div(
-                average_embedding_weight[global_word_idx], len(global_embedding_map[global_word_idx])
+            average_embedding_weight[global_embedding_word] = torch.div(
+                average_embedding_weight[global_embedding_word], global_update_times[global_embedding_word]
             )
 
     return average_embedding_weight
