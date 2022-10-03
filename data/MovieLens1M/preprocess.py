@@ -1,11 +1,12 @@
 import argparse
-
 import re
+
 import numpy as np
 import pandas as pd
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--task_num', default='2', choices=['1', '2'])
+parser.add_argument('--split_train_test', type=bool, default=False)
+parser.add_argument('--client_num', type=int, default=0)
 args = parser.parse_args()
 
 user_column_names = ['user_id', 'gender', 'age', 'occupation', 'zip_code']
@@ -78,4 +79,14 @@ df_numerical_data.columns = new_numerical_cols
 df_final_data = pd.concat([df_category_data, df_numerical_data, df_label_data], axis=1)
 print('categorical col num: {}; numerical col num: {}'.format(len(category_cols) - 2, len(numerical_cols)))
 
-df_final_data.to_csv('./data.csv', index=0)
+df_final_data = df_final_data.sample(frac=1.0)
+if args.split_train_test:
+    df_train_data = df_final_data.head(int(df_final_data.shape[0] * 0.8))
+    df_test_data = df_final_data.tail(int(df_final_data.shape[0] * 0.2))
+    df_test_data.to_csv('./test.csv', index=False)
+    if args.client_num > 0:
+        for client_idx in range(args.client_num):
+            df_train_data.query(f'user_id % {args.client_num} == {client_idx}').to_csv(f'./train_{client_idx}.csv',
+                                                                                       index=False)
+else:
+    df_final_data.to_csv('./data.csv', index=False)
