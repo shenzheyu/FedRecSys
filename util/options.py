@@ -37,6 +37,7 @@ def args_parser():
 
     # other arguments
     parser.add_argument('--dataset', type=str, default='mnist', help="name of dataset")
+    parser.add_argument('--separate_data', type=bool, default=False, help="client read separate data")
     parser.add_argument('--num_classes', type=int, default=10, help="number of classes")
     parser.add_argument('--gpu', default=None, help="To use cuda, set to a specific GPU ID. Default set to use CPU.")
     parser.add_argument('--optimizer', type=str, default='adam', help="type of optimizer")
