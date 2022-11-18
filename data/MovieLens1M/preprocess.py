@@ -83,6 +83,7 @@ df_final_data = df_final_data.sample(frac=1.0)
 if args.split_train_test:
     df_train_data = df_final_data.head(int(df_final_data.shape[0] * 0.8))
     df_test_data = df_final_data.tail(int(df_final_data.shape[0] * 0.2))
+    df_train_data.to_csv('./train.csv', index=False)
     df_test_data.to_csv('./test.csv', index=False)
     if args.client_num > 0:
         for client_idx in range(args.client_num):

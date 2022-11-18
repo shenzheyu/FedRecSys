@@ -7,7 +7,7 @@ from sklearn.metrics import roc_auc_score
 from dataset.aliexpress import AliExpressDataset
 from dataset.movielens import MovieLensDataset
 from model.dlrm import DLRMModel
-from model.mmoe_v2 import MMoEModel
+from model.mmoe import MMoEModel
 from model.wdl import WDLModel
 
 

@@ -3,25 +3,30 @@ import os
 import numpy as np
 import torch
 import tqdm
-from sklearn.metrics import roc_auc_score
 from sklearn.metrics import mean_squared_error
+from sklearn.metrics import roc_auc_score
 from torch.utils.data import DataLoader
 
 from dataset.aliexpress import AliExpressDataset
-from dataset.movielens import MovieLensDataset
+from dataset.movielens import MovieLensDataset, MovieLensDatasetWithBehavior
+from model.din import DINModel
 from model.dlrm import DLRMModel
-from model.mmoe_v2 import MMoEModel
-from model.wdl import WDLModel
 from model.lr import LinearRegression
+from model.mmoe import MMoEModel
+from model.ple import PLEModel
+from model.wdl import WDLModel
 from util.options import args_parser
 from util.utils import count_parameters
 
 
-def get_dataset(name, path):
+def get_dataset(name, path, model_name, task_num):
     if 'AliExpress' in name:
-        return AliExpressDataset(path)
+        return AliExpressDataset(path, task_num=task_num)
     if 'MovieLens' in name:
-        return MovieLensDataset(path)
+        if model_name == 'din':
+            return MovieLensDatasetWithBehavior(path, task_num=task_num)
+        else:
+            return MovieLensDataset(path, task_num=task_num)
     else:
         raise ValueError('unknown dataset name: ' + name)
 
@@ -35,6 +40,16 @@ def get_model(name, categorical_field_dims, numerical_num, task_num, expert_num,
         print('Model: MMoE')
         return MMoEModel(categorical_field_dims, numerical_num, embed_dim=embed_dim, bottom_mlp_dims=(512, 256),
                          tower_mlp_dims=(128, 64), task_num=task_num, expert_num=expert_num, dropout=0.2)
+    elif name == 'ple':
+        print('Model: PLE')
+        return PLEModel(categorical_field_dims, numerical_num, embed_dim=embed_dim, bottom_mlp_dims=(512, 256),
+                        tower_mlp_dims=(128, 64), task_num=task_num, shared_expert_num=int(expert_num / 2),
+                        specific_expert_num=int(expert_num / 2), dropout=0.2)
+    elif name == 'din':
+        print('Model: DIN')
+        model = DINModel(categorical_field_dims, numerical_num, embed_dim=embed_dim)
+        model.embedding.update_offsets(None)
+        return model
     elif name == 'dlrm':
         print('Model: DLRM')
         return DLRMModel(categorical_field_dims, numerical_num, embed_dim=embed_dim, bottom_mlp_dims=(32, 16),
@@ -130,6 +145,32 @@ def train(args, model, optimizer, data_loader, criterion, device, log_interval=1
                               )
             args.is_onnx_exported = True
 
+
+def train_din(args, model, optimizer, data_loader, criterion, device, log_interval=100):
+    model.train()
+    total_loss = 0
+    loader = tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)
+
+    for i, (categorical_fields, numerical_fields, query_item, user_behavior, user_behavior_length, labels) in enumerate(
+            loader):
+        categorical_fields, numerical_fields, query_item, user_behavior, user_behavior_length, labels = categorical_fields.to(
+            device), numerical_fields.to(device), query_item.to(device), user_behavior.to(
+            device), user_behavior_length.to(device), labels.to(device)
+        y = model(categorical_fields, numerical_fields, query_item, user_behavior, user_behavior_length)
+        loss_list = [criterion[i](y[i].view(-1), labels[:, i].float()) for i in range(labels.size(1))]
+        loss = 0
+        for item in loss_list:
+            loss += item
+        loss /= len(loss_list)
+        model.zero_grad()
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+        if (i + 1) % log_interval == 0:
+            loader.set_postfix(loss=total_loss / log_interval)
+            total_loss = 0
+
+
 def test(model, data_loader, task_num, criterion, evaluation, device):
     model.eval()
     labels_dict, predicts_dict, loss_dict = {}, {}, {}
@@ -140,6 +181,29 @@ def test(model, data_loader, task_num, criterion, evaluation, device):
             categorical_fields, numerical_fields, labels = categorical_fields.to(device), numerical_fields.to(
                 device), labels.to(device)
             y = model(categorical_fields, numerical_fields)
+            for i in range(task_num):
+                labels_dict[i].extend(labels[:, i].tolist())
+                predicts_dict[i].extend(y[i].tolist())
+                loss_dict[i].append(criterion[i](y[i].view(-1).cpu(), labels[:, i].float().cpu()))
+    evaluation_results, loss_results = list(), list()
+    for i in range(task_num):
+        evaluation_results.append(evaluation[i](labels_dict[i], predicts_dict[i]))
+        loss_results.append(np.array(loss_dict[i]).mean())
+    return evaluation_results, loss_results
+
+
+def test_din(model, data_loader, task_num, criterion, evaluation, device):
+    model.eval()
+    labels_dict, predicts_dict, loss_dict = {}, {}, {}
+    for i in range(task_num):
+        labels_dict[i], predicts_dict[i], loss_dict[i] = list(), list(), list()
+    with torch.no_grad():
+        for categorical_fields, numerical_fields, query_item, user_behavior, user_behavior_length, labels in tqdm.tqdm(
+                data_loader, smoothing=0, mininterval=1.0):
+            categorical_fields, numerical_fields, query_item, user_behavior, user_behavior_length, labels = categorical_fields.to(
+                device), numerical_fields.to(device), query_item.to(device), user_behavior.to(
+                device), user_behavior_length.to(device), labels.to(device)
+            y = model(categorical_fields, numerical_fields, query_item, user_behavior, user_behavior_length)
             for i in range(task_num):
                 labels_dict[i].extend(labels[:, i].tolist())
                 predicts_dict[i].extend(y[i].tolist())
@@ -167,14 +231,23 @@ def main(args, dataset_name,
          device,
          save_dir):
     device = torch.device(device)
-    dataset = get_dataset(dataset_name, os.path.join(dataset_path, dataset_name) + '/data.csv')
-    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [int(len(dataset) * 0.7),
-                                                                          len(dataset) - int(len(dataset) * 0.7)])
+    train_dataset = get_dataset(dataset_name, os.path.join(dataset_path, dataset_name) + '/train.csv', model_name,
+                                args.task_num)
+    test_dataset = get_dataset(dataset_name, os.path.join(dataset_path, dataset_name) + '/test.csv', model_name,
+                               args.task_num)
+    if model_name == 'din':
+        train_dataset.get_user_behaviors()
+        train_dataset.update_behavior_data()
+        train_dataset.add_offset()
+        test_dataset.get_user_behaviors(train_dataset.user_behavior_dict)
+        test_dataset.update_behavior_data()
+        test_dataset.add_offset()
+
     train_data_loader = DataLoader(train_dataset, batch_size=batch_size, num_workers=4, shuffle=True)
     test_data_loader = DataLoader(test_dataset, batch_size=batch_size, num_workers=4, shuffle=False)
 
-    field_dims = dataset.field_dims
-    numerical_num = dataset.numerical_num
+    field_dims = train_dataset.field_dims
+    numerical_num = train_dataset.numerical_num
     model = get_model(model_name, field_dims, numerical_num, task_num, expert_num, embed_dim).to(device)
     print(model)
     print("model_size = {}".format(count_parameters(model)))  # DLRM - 1.4M
@@ -185,23 +258,30 @@ def main(args, dataset_name,
     save_path = f'{save_dir}/{dataset_name}_{model_name}.pt'
     early_stopper = EarlyStopper(num_trials=2, save_path=save_path)
     for epoch_i in range(epoch):
-        train(args, model, optimizer, train_data_loader, criterion, device)
-        evaluation, loss = test(model, test_data_loader, task_num, criterion, evaluation_func, device)
+        if model_name == 'din':
+            train_din(args, model, optimizer, train_data_loader, criterion, device)
+            evaluation, loss = test_din(model, test_data_loader, task_num, criterion, evaluation_func, device)
+        else:
+            train(args, model, optimizer, train_data_loader, criterion, device)
+            evaluation, loss = test(model, test_data_loader, task_num, criterion, evaluation_func, device)
         print('epoch:', epoch_i)
         for i in range(task_num):
-            print(f'task {i}, {evaluation_name[i]} {evaluation[i]}, Log-loss {loss[i]}')
+            print(f'task {i}, {evaluation_name.split(",")[i]} {evaluation[i]}, Log-loss {loss[i]}')
         if use_early_stopper and not early_stopper.is_continuable(model, np.array(evaluation).mean()):
             print(f'test: best evaluation: {early_stopper.best_accuracy}')
             break
 
     if use_early_stopper:
         model.load_state_dict(torch.load(save_path))
-    evaluation, loss = test(model, test_data_loader, task_num, criterion, evaluation_func, device)
+    if model_name == 'din':
+        evaluation, loss = test_din(model, test_data_loader, task_num, criterion, evaluation_func, device)
+    else:
+        evaluation, loss = test(model, test_data_loader, task_num, criterion, evaluation_func, device)
     f = open('{}_{}.txt'.format(model_name, dataset_name), 'a', encoding='utf-8')
     f.write('learning rate: {}\n'.format(learning_rate))
     for i in range(task_num):
-        print(f'task {i}, {evaluation_name[i]} {evaluation[i]}, Log-loss {loss[i]}')
-        f.write(f'task {i}, {evaluation_name[i]} {evaluation[i]}, Log-loss {loss[i]}')
+        print(f'task {i}, {evaluation_name.split(",")[i]} {evaluation[i]}, Log-loss {loss[i]}')
+        f.write(f'task {i}, {evaluation_name.split(",")[i]} {evaluation[i]}, Log-loss {loss[i]}')
     print('\n')
     f.write('\n')
     f.close()

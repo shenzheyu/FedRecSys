@@ -7,9 +7,9 @@ def args_parser():
     # federated arguments (Notation for the arguments followed from paper)
     parser.add_argument('--epoch', type=int, default=50,
                         help="number of rounds of training")
-    parser.add_argument('--num_clients', type=int, default=100,
+    parser.add_argument('--num_clients', type=int, default=10,
                         help="number of users: K")
-    parser.add_argument('--frac', type=float, default=0.1,
+    parser.add_argument('--frac', type=float, default=0.5,
                         help='the fraction of clients: C')
     parser.add_argument('--local_ep', type=int, default=10,
                         help="the number of local epochs: E")
@@ -24,10 +24,10 @@ def args_parser():
     parser.add_argument('--dataset_name', default='AliExpress_NL',
                         choices=['AliExpress_NL', 'AliExpress_ES', 'AliExpress_FR', 'AliExpress_US', 'MovieLens1M'])
     parser.add_argument('--dataset_path', default='./data/')
-    parser.add_argument('--model_name', default='mmoe', choices=['mmoe', 'dlrm', 'wdl', 'lr'])
+    parser.add_argument('--model_name', default='mmoe', choices=['mmoe', 'dlrm', 'ple', 'din', 'wdl', 'lr'])
     parser.add_argument('--task_num', type=int, default=2)
     parser.add_argument('--expert_num', type=int, default=8)
-    parser.add_argument('--learning_rate', type=float, default=0.001)
+    parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--embed_dim', type=int, default=128)
     parser.add_argument('--weight_decay', type=float, default=1e-6)
