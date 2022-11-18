@@ -1,6 +1,6 @@
 import argparse
-import re
 
+import re
 import numpy as np
 import pandas as pd
 
@@ -87,7 +87,6 @@ if args.split_train_test:
     df_test_data.to_csv('./test.csv', index=False)
     if args.client_num > 0:
         for client_idx in range(args.client_num):
-            df_train_data.query(f'user_id % {args.client_num} == {client_idx}').to_csv(f'./train_{client_idx}.csv',
-                                                                                       index=False)
+            df_train_data.query(f'user_id % {client_idx} == 0').to_csv(f'./train_{client_idx}.csv', index=False)
 else:
     df_final_data.to_csv('./data.csv', index=False)
